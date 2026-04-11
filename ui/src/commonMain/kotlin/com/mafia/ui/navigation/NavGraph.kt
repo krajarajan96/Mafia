@@ -39,7 +39,15 @@ fun MafiaApp(repository: GameRepository) {
     LaunchedEffect(Unit) {
         repository.lastEvent.collect { event ->
             when (event) {
-                is ServerMessage.RoomCreated, is ServerMessage.RoomJoined -> currentScreen = Screen.WaitingRoom
+                is ServerMessage.RoomCreated -> {
+                    if (event.room.mode == GameMode.SINGLE_PLAYER) {
+                        // Skip WaitingRoom for single player — start immediately
+                        repository.startGame()
+                    } else {
+                        currentScreen = Screen.WaitingRoom
+                    }
+                }
+                is ServerMessage.RoomJoined -> currentScreen = Screen.WaitingRoom
                 is ServerMessage.GameStarted -> currentScreen = Screen.Game
                 else -> {}
             }
