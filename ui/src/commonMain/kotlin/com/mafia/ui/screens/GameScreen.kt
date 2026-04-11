@@ -1,10 +1,5 @@
 package com.mafia.ui.screens
 
-// NOTE: This is a simplified version. Copy the full GameScreen.kt from the
-// Claude conversation artifact "ui/screens/GameScreen.kt" for the complete
-// implementation with all phase sub-views (NightContent, DiscussionContent,
-// VotingContent, EliminationContent, GameOverContent, PlayersStrip).
-
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -34,9 +29,13 @@ fun GameScreen(
     phase: GamePhase, round: Int, myRole: Role?, myPlayerId: String?,
     alivePlayers: List<PlayerPublicInfo>, chatMessages: List<ChatMessage>,
     timerSeconds: Int, voteTally: Map<String, Int>,
-    detectiveResult: ServerMessage.DetectiveResult?, lastEvent: ServerMessage?,
+    detectiveResult: ServerMessage.DetectiveResult?,
+    nightSummary: ServerMessage.NightSummary?,
+    voteResult: ServerMessage.VoteResult?,
+    voteLog: List<VoteEntry>,
+    lastEvent: ServerMessage?,
     onNightAction: (String) -> Unit, onSendChat: (String) -> Unit,
-    onVote: (String) -> Unit, onLeave: () -> Unit
+    onVote: (String) -> Unit, onSkipVote: () -> Unit, onLeave: () -> Unit
 ) {
     val bgGradient = when {
         phase.isNightPhase() -> Brush.verticalGradient(listOf(Color(0xFF0A0520), Color(0xFF1A0A3E)))
@@ -95,6 +94,39 @@ fun GameScreen(
                             }
                             Spacer(Modifier.height(16.dp))
                             Button(onClick = { selected?.let { onNightAction(it); selected = null } }, enabled = selected != null, colors = ButtonDefaults.buttonColors(containerColor = MafiaPurple), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().height(48.dp)) { Text("Confirm", fontWeight = FontWeight.SemiBold) }
+                        }
+                    }
+                }
+                GamePhase.NIGHT_RESULT -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(32.dp)) {
+                            when {
+                                nightSummary?.wasSaved == true -> {
+                                    Text("💚", fontSize = 72.sp)
+                                    Spacer(Modifier.height(12.dp))
+                                    Text("Someone was saved!", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = TownGreen, textAlign = TextAlign.Center)
+                                    Text("The Doctor protected their target tonight.", fontSize = 14.sp, color = Color.White.copy(0.6f), textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
+                                }
+                                nightSummary?.eliminatedPlayer != null -> {
+                                    val dead = nightSummary.eliminatedPlayer
+                                    Text("💀", fontSize = 72.sp)
+                                    Spacer(Modifier.height(12.dp))
+                                    Text("${dead!!.avatarEmoji} ${dead.name}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MafiaRed, textAlign = TextAlign.Center)
+                                    Text("was killed by the Mafia", fontSize = 16.sp, color = Color.White.copy(0.7f), textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+                                    nightSummary.eliminatedRole?.let { role ->
+                                        Spacer(Modifier.height(8.dp))
+                                        Surface(color = Color.White.copy(0.1f), shape = RoundedCornerShape(8.dp)) {
+                                            Text("They were ${role.emoji} ${role.displayName}", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 13.sp, color = Color.White.copy(0.8f))
+                                        }
+                                    }
+                                }
+                                else -> {
+                                    Text("🌙", fontSize = 72.sp)
+                                    Spacer(Modifier.height(12.dp))
+                                    Text("A quiet night...", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center)
+                                    Text("No one was harmed tonight.", fontSize = 14.sp, color = Color.White.copy(0.6f), textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
+                                }
+                            }
                         }
                     }
                 }
@@ -160,21 +192,103 @@ fun GameScreen(
                 GamePhase.VOTING -> {
                     var voted by remember { mutableStateOf(false) }
                     val targets = alivePlayers.filter { it.id != myPlayerId }
-                    Column(Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("🗳️ Vote to Eliminate", fontSize = 20.sp, color = MafiaRed, fontWeight = FontWeight.Bold)
-                        Spacer(Modifier.height(16.dp))
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(targets) { p ->
-                                val votes = voteTally[p.id] ?: 0
-                                Surface(Modifier.fillMaxWidth().clickable(enabled = !voted) { onVote(p.id); voted = true }, color = Color.White.copy(0.08f), shape = RoundedCornerShape(12.dp)) {
-                                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                                        Text(p.avatarEmoji, fontSize = 28.sp); Spacer(Modifier.width(12.dp)); Text(p.name, color = Color.White, fontSize = 16.sp, modifier = Modifier.weight(1f))
-                                        if (votes > 0) Surface(color = MafiaRed.copy(0.6f), shape = CircleShape) { Text("$votes", Modifier.padding(horizontal = 10.dp, vertical = 4.dp), color = Color.White, fontWeight = FontWeight.Bold) }
+                    Column(Modifier.fillMaxSize()) {
+                        // Live vote log
+                        if (voteLog.isNotEmpty()) {
+                            Surface(color = Color.Black.copy(0.3f), modifier = Modifier.fillMaxWidth()) {
+                                Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                    Text("Vote Log", fontSize = 12.sp, color = Color.White.copy(0.5f), fontWeight = FontWeight.SemiBold)
+                                    Spacer(Modifier.height(4.dp))
+                                    voteLog.takeLast(5).forEach { entry ->
+                                        Text(
+                                            if (entry.isSkip) "• ${entry.voterName} skipped"
+                                            else "• ${entry.voterName} → ${entry.targetName}",
+                                            fontSize = 12.sp,
+                                            color = if (entry.isSkip) Color.White.copy(0.4f) else Color.White.copy(0.8f)
+                                        )
                                     }
                                 }
                             }
                         }
-                        if (voted) { Spacer(Modifier.height(16.dp)); Text("✓ Vote cast", color = TownGreen, fontSize = 14.sp) }
+                        Column(Modifier.weight(1f).padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("🗳️ Vote to Eliminate", fontSize = 20.sp, color = MafiaRed, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(12.dp))
+                            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
+                                items(targets) { p ->
+                                    val votes = voteTally[p.id] ?: 0
+                                    Surface(Modifier.fillMaxWidth().clickable(enabled = !voted) { onVote(p.id); voted = true }, color = Color.White.copy(0.08f), shape = RoundedCornerShape(12.dp)) {
+                                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Text(p.avatarEmoji, fontSize = 28.sp); Spacer(Modifier.width(12.dp)); Text(p.name, color = Color.White, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                                            if (votes > 0) Surface(color = MafiaRed.copy(0.6f), shape = CircleShape) { Text("$votes", Modifier.padding(horizontal = 10.dp, vertical = 4.dp), color = Color.White, fontWeight = FontWeight.Bold) }
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(12.dp))
+                            if (!voted) {
+                                OutlinedButton(
+                                    onClick = { onSkipVote(); voted = true },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonColors(
+                                        containerColor = Color.Transparent,
+                                        contentColor = Color.White.copy(0.6f),
+                                        disabledContainerColor = Color.Transparent,
+                                        disabledContentColor = Color.White.copy(0.3f)
+                                    )
+                                ) { Text("Skip / Abstain") }
+                            } else {
+                                Text("✓ Vote cast", color = TownGreen, fontSize = 14.sp)
+                            }
+                        }
+                    }
+                }
+                GamePhase.ELIMINATION -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
+                            val eliminated = voteResult?.eliminatedPlayer
+                            if (eliminated != null) {
+                                Text("⚖️", fontSize = 64.sp)
+                                Spacer(Modifier.height(12.dp))
+                                Text("${eliminated.avatarEmoji} ${eliminated.name}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MafiaRed, textAlign = TextAlign.Center)
+                                Text("has been eliminated by vote", fontSize = 16.sp, color = Color.White.copy(0.7f), textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+                                voteResult.eliminatedRole?.let { role ->
+                                    Spacer(Modifier.height(8.dp))
+                                    Surface(color = if (role.isMafia()) MafiaRed.copy(0.2f) else TownGreen.copy(0.2f), shape = RoundedCornerShape(8.dp)) {
+                                        Text("They were ${role.emoji} ${role.displayName}", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 13.sp, color = Color.White.copy(0.9f))
+                                    }
+                                }
+                            } else if (voteResult?.wasTie == true) {
+                                Text("🤝", fontSize = 64.sp)
+                                Spacer(Modifier.height(12.dp))
+                                Text("It's a tie!", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center)
+                                Text("No one was eliminated.", fontSize = 16.sp, color = Color.White.copy(0.6f), textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+                            } else {
+                                Text("🕊️", fontSize = 64.sp)
+                                Spacer(Modifier.height(12.dp))
+                                Text("No elimination", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White, textAlign = TextAlign.Center)
+                            }
+
+                            // Vote summary
+                            if (voteLog.isNotEmpty()) {
+                                Spacer(Modifier.height(24.dp))
+                                Surface(color = Color.White.copy(0.08f), shape = RoundedCornerShape(12.dp)) {
+                                    Column(Modifier.padding(12.dp)) {
+                                        Text("Vote Summary", fontSize = 13.sp, color = Color.White.copy(0.5f), fontWeight = FontWeight.SemiBold)
+                                        Spacer(Modifier.height(6.dp))
+                                        voteLog.forEach { entry ->
+                                            Text(
+                                                if (entry.isSkip) "• ${entry.voterName} — abstained"
+                                                else "• ${entry.voterName} voted for ${entry.targetName}",
+                                                fontSize = 13.sp,
+                                                color = if (entry.isSkip) Color.White.copy(0.4f) else Color.White.copy(0.8f),
+                                                modifier = Modifier.padding(vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 GamePhase.GAME_OVER -> {

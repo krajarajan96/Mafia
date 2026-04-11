@@ -11,6 +11,7 @@ data class GameState(
     val phaseTimeRemaining: Int = 0,
     val nightActions: NightActions = NightActions(),
     val votes: Map<String, String> = emptyMap(),
+    val skips: Set<String> = emptySet(),
     val eliminatedThisRound: String? = null,
     val savedThisNight: Boolean = false,
     val winner: Team? = null,
@@ -65,3 +66,6 @@ data class ChatMessage(
     val id: String, val senderId: String, val senderName: String,
     val text: String, val timestamp: Long, val isSystem: Boolean = false
 )
+
+/** A single entry in the voting log shown to all players. */
+data class VoteEntry(val voterName: String, val targetName: String, val isSkip: Boolean)

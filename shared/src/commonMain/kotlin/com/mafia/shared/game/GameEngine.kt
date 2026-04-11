@@ -31,9 +31,9 @@ class GameEngine {
     fun advancePhase(state: GameState): GameState {
         val next = state.phase.next()
         return when (next) {
-            GamePhase.NIGHT -> state.copy(phase = next, round = state.round + 1, nightActions = NightActions(), votes = emptyMap(), eliminatedThisRound = null, savedThisNight = false)
-            GamePhase.DISCUSSION -> state.copy(phase = next, votes = emptyMap(), eliminatedThisRound = null)
-            GamePhase.VOTING -> state.copy(phase = next, votes = emptyMap())
+            GamePhase.NIGHT -> state.copy(phase = next, round = state.round + 1, nightActions = NightActions(), votes = emptyMap(), skips = emptySet(), eliminatedThisRound = null, savedThisNight = false)
+            GamePhase.DISCUSSION -> state.copy(phase = next, votes = emptyMap(), skips = emptySet(), eliminatedThisRound = null)
+            GamePhase.VOTING -> state.copy(phase = next, votes = emptyMap(), skips = emptySet())
             else -> state.copy(phase = next)
         }
     }
@@ -59,6 +59,12 @@ class GameEngine {
         return state.copy(votes = state.votes + (voterId to targetId))
     }
 
+    fun submitSkip(state: GameState, voterId: String): GameState {
+        val voter = state.getPlayer(voterId)
+        if (voter == null || !voter.isAlive) return state
+        return state.copy(skips = state.skips + voterId)
+    }
+
     fun allNightActionsSubmitted(state: GameState): Boolean {
         return state.alivePlayers.filter { it.role?.hasNightAction == true }.all { player ->
             when (player.role) {
@@ -70,9 +76,10 @@ class GameEngine {
         }
     }
 
-    fun allVotesSubmitted(state: GameState): Boolean {
+    /** Returns true when every alive player has either voted or explicitly skipped. */
+    fun allVotedOrSkipped(state: GameState): Boolean {
         val aliveIds = state.alivePlayers.map { it.id }.toSet()
-        return aliveIds.all { it in state.votes }
+        return aliveIds.all { it in state.votes || it in state.skips }
     }
 
     fun getValidNightTargets(state: GameState, playerId: String): List<Player> {

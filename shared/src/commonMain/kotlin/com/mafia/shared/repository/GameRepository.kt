@@ -8,6 +8,8 @@ import com.mafia.shared.network.messages.ServerMessage
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
+private const val SKIP_VOTE = "SKIP"
+
 class GameRepository(
     private val socket: GameSocket,
     private val engine: GameEngine = GameEngine()
@@ -36,6 +38,12 @@ class GameRepository(
     val detectiveResult: StateFlow<ServerMessage.DetectiveResult?> = _detectiveResult.asStateFlow()
     private val _voteTally = MutableStateFlow<Map<String, Int>>(emptyMap())
     val voteTally: StateFlow<Map<String, Int>> = _voteTally.asStateFlow()
+    private val _nightSummary = MutableStateFlow<ServerMessage.NightSummary?>(null)
+    val nightSummary: StateFlow<ServerMessage.NightSummary?> = _nightSummary.asStateFlow()
+    private val _voteResult = MutableStateFlow<ServerMessage.VoteResult?>(null)
+    val voteResult: StateFlow<ServerMessage.VoteResult?> = _voteResult.asStateFlow()
+    private val _voteLog = MutableStateFlow<List<VoteEntry>>(emptyList())
+    val voteLog: StateFlow<List<VoteEntry>> = _voteLog.asStateFlow()
     val connectionState = socket.connectionState
 
     // ── Local single-player state ───────────────────────────────────────────
@@ -63,12 +71,21 @@ class GameRepository(
                 _phase.value = msg.phase; _round.value = msg.round
                 _alivePlayers.value = msg.alivePlayers; _timer.value = msg.durationSeconds
                 _voteTally.value = emptyMap()
-                if (msg.phase == GamePhase.NIGHT) _detectiveResult.value = null
+                if (msg.phase == GamePhase.NIGHT) { _detectiveResult.value = null; _nightSummary.value = null }
+                if (msg.phase == GamePhase.VOTING) _voteLog.value = emptyList()
             }
             is ServerMessage.TimerTick -> _timer.value = msg.secondsRemaining
             is ServerMessage.ChatReceived -> _chatMessages.value = _chatMessages.value + msg.message
             is ServerMessage.DetectiveResult -> _detectiveResult.value = msg
-            is ServerMessage.VoteUpdate -> _voteTally.value = msg.currentTally
+            is ServerMessage.NightSummary -> _nightSummary.value = msg
+            is ServerMessage.VoteUpdate -> {
+                _voteTally.value = msg.currentTally
+                val voterName = _alivePlayers.value.find { it.id == msg.voterId }?.name ?: msg.voterId
+                val isSkip = msg.targetId == SKIP_VOTE
+                val targetName = if (isSkip) "Skip" else (_alivePlayers.value.find { it.id == msg.targetId }?.name ?: msg.targetId)
+                _voteLog.value = _voteLog.value + VoteEntry(voterName, targetName, isSkip)
+            }
+            is ServerMessage.VoteResult -> _voteResult.value = msg
             is ServerMessage.GameOver -> _phase.value = GamePhase.GAME_OVER
             else -> {}
         }
@@ -112,6 +129,11 @@ class GameRepository(
         else socket.send(ClientMessage.CastVote(targetId))
     }
 
+    fun skipVote() {
+        if (isLocalGame) pendingVote?.complete(SKIP_VOTE)
+        else socket.send(ClientMessage.SkipVote)
+    }
+
     fun leaveRoom() {
         if (isLocalGame) {
             localGameJob?.cancel()
@@ -128,6 +150,7 @@ class GameRepository(
         isLocalGame = false; localState = null; localGameJob?.cancel()
         _myRole.value = null; _phase.value = GamePhase.LOBBY; _chatMessages.value = emptyList()
         _detectiveResult.value = null; _voteTally.value = emptyMap()
+        _nightSummary.value = null; _voteResult.value = null; _voteLog.value = emptyList()
         _round.value = 0; _alivePlayers.value = emptyList()
     }
 
@@ -151,26 +174,23 @@ class GameRepository(
         _chatMessages.value = emptyList()
         _round.value = 0
         _voteTally.value = emptyMap()
+        _voteLog.value = emptyList()
         _detectiveResult.value = null
+        _nightSummary.value = null
+        _voteResult.value = null
 
-        // Trigger navigation to Game screen
         _lastEvent.emit(ServerMessage.GameStarted(allPlayers.size))
-
-        // Role reveal
         localPhase(GamePhase.ROLE_REVEAL, GamePhase.ROLE_REVEAL.defaultDurationSeconds)
 
-        // Main game loop
         var round = 0
         while (true) {
             localState!!.checkWinCondition()?.let { endLocalGame(it); return }
 
             round++
             localState = localState!!.copy(
-                round = round,
-                nightActions = NightActions(),
-                votes = emptyMap(),
-                eliminatedThisRound = null,
-                savedThisNight = false
+                round = round, nightActions = NightActions(),
+                votes = emptyMap(), skips = emptySet(),
+                eliminatedThisRound = null, savedThisNight = false
             )
             _detectiveResult.value = null
             _voteTally.value = emptyMap()
@@ -193,9 +213,7 @@ class GameRepository(
                     localState = engine.submitNightAction(localState!!, humanId, target)
                     if (localState!!.getPlayer(humanId)?.role == Role.DETECTIVE) {
                         localState!!.getPlayer(target)?.let { t ->
-                            _detectiveResult.value = ServerMessage.DetectiveResult(
-                                t.id, t.name, t.role?.isMafia() == true
-                            )
+                            _detectiveResult.value = ServerMessage.DetectiveResult(t.id, t.name, t.role?.isMafia() == true)
                         }
                     }
                 } catch (_: Exception) {}
@@ -203,9 +221,11 @@ class GameRepository(
 
             localState = engine.processNightActions(localState!!)
             val nightElim = localState!!.eliminatedThisRound?.let { localState!!.getPlayer(it) }
-            _lastEvent.emit(ServerMessage.NightSummary(
+            val summary = ServerMessage.NightSummary(
                 nightElim?.let { PlayerPublicInfo.from(it) }, nightElim?.role, localState!!.savedThisNight
-            ))
+            )
+            _nightSummary.value = summary
+            _lastEvent.emit(summary)
 
             localState!!.checkWinCondition()?.let { endLocalGame(it); return }
 
@@ -217,7 +237,8 @@ class GameRepository(
             localPhase(GamePhase.DISCUSSION, GamePhase.DISCUSSION.defaultDurationSeconds)
 
             // ── VOTING ───────────────────────────────────────────────────────
-            localState = localState!!.copy(votes = emptyMap())
+            localState = localState!!.copy(votes = emptyMap(), skips = emptySet())
+            _voteLog.value = emptyList()
             pendingVote = CompletableDeferred()
             val voteDeferred = pendingVote!!
             localPhaseWithWork(GamePhase.VOTING, GamePhase.VOTING.defaultDurationSeconds) {
@@ -232,8 +253,16 @@ class GameRepository(
             if (voteDeferred.isCompleted) {
                 try {
                     val target = voteDeferred.getCompleted()
-                    localState = engine.submitVote(localState!!, humanId, target)
-                    _voteTally.value = localState!!.votes.values.groupingBy { it }.eachCount()
+                    val humanName = localState!!.getPlayer(humanId)?.name ?: "You"
+                    if (target == SKIP_VOTE) {
+                        localState = engine.submitSkip(localState!!, humanId)
+                        _voteLog.value = _voteLog.value + VoteEntry(humanName, "Skip", true)
+                    } else {
+                        localState = engine.submitVote(localState!!, humanId, target)
+                        _voteTally.value = localState!!.votes.values.groupingBy { it }.eachCount()
+                        val targetName = localState!!.getPlayer(target)?.name ?: target
+                        _voteLog.value = _voteLog.value + VoteEntry(humanName, targetName, false)
+                    }
                 } catch (_: Exception) {}
             }
 
@@ -241,9 +270,11 @@ class GameRepository(
             localState = engine.processVote(localState!!)
             val eliminatedV = eliminatedVId?.let { localState!!.getPlayer(it) }
             val tally = localState!!.votes.values.groupingBy { it }.eachCount()
-            _lastEvent.emit(ServerMessage.VoteResult(
+            val voteResultMsg = ServerMessage.VoteResult(
                 eliminatedV?.let { PlayerPublicInfo.from(it) }, eliminatedV?.role, eliminatedVId == null, tally
-            ))
+            )
+            _voteResult.value = voteResultMsg
+            _lastEvent.emit(voteResultMsg)
 
             localState!!.checkWinCondition()?.let { endLocalGame(it); return }
 
@@ -255,7 +286,6 @@ class GameRepository(
         }
     }
 
-    /** Runs a timed phase with a blocking countdown (no human input needed). */
     private suspend fun localPhase(phase: GamePhase, durationSec: Int) {
         val state = localState!!
         _phase.value = phase
@@ -268,17 +298,12 @@ class GameRepository(
         }
     }
 
-    /**
-     * Runs a timed phase while [block] executes concurrently.
-     * Returns when [block] completes or when [durationSec] elapses, whichever is first.
-     */
     private suspend fun localPhaseWithWork(phase: GamePhase, durationSec: Int, block: suspend () -> Unit) {
         val state = localState!!
         _phase.value = phase
         _round.value = state.round
         _alivePlayers.value = state.alivePlayers.map { PlayerPublicInfo.from(it) }
         _timer.value = durationSec
-
         val timerJob = scope.launch {
             repeat(durationSec) { i ->
                 delay(1000)
@@ -293,7 +318,6 @@ class GameRepository(
         }
     }
 
-    /** AI night action heuristics. */
     private fun doAINightActions() {
         val bots = localState?.alivePlayers?.filter { it.isAI && it.role?.hasNightAction == true } ?: return
         bots.forEach { bot ->
@@ -308,7 +332,6 @@ class GameRepository(
         }
     }
 
-    /** AI voting heuristics: vote for a random alive opponent. */
     private fun doAIVotes() {
         val bots = localState?.alivePlayers?.filter { it.isAI } ?: return
         bots.forEach { bot ->
@@ -317,6 +340,8 @@ class GameRepository(
             target?.let {
                 localState = engine.submitVote(localState!!, bot.id, it)
                 _voteTally.value = localState!!.votes.values.groupingBy { v -> v }.eachCount()
+                val targetName = localState!!.getPlayer(it)?.name ?: it
+                _voteLog.value = _voteLog.value + VoteEntry(bot.name, targetName, false)
             }
         }
     }

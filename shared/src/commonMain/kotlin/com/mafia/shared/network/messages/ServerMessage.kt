@@ -19,7 +19,7 @@ sealed class ServerMessage {
     @Serializable data class DetectiveResult(val targetId: String, val targetName: String, val isMafia: Boolean) : ServerMessage()
     @Serializable data class NightSummary(val eliminatedPlayer: PlayerPublicInfo?, val eliminatedRole: Role?, val wasSaved: Boolean) : ServerMessage()
     @Serializable data class ChatReceived(val message: ChatMessage) : ServerMessage()
-    @Serializable data class VoteUpdate(val voterId: String, val targetId: String, val currentTally: Map<String, Int>) : ServerMessage()
+    @Serializable data class VoteUpdate(val voterId: String, val targetId: String, val currentTally: Map<String, Int>, val currentSkips: Set<String> = emptySet()) : ServerMessage()
     @Serializable data class VoteResult(val eliminatedPlayer: PlayerPublicInfo?, val eliminatedRole: Role?, val wasTie: Boolean, val finalTally: Map<String, Int>) : ServerMessage()
     @Serializable data class GameOver(val winner: Team, val allRoles: Map<String, Role>, val mvp: String? = null) : ServerMessage()
     @Serializable data class TimerTick(val secondsRemaining: Int) : ServerMessage()

@@ -50,9 +50,9 @@ class GameSession(
     private suspend fun transitionTo(phase: GamePhase) {
         phaseTimerJob?.cancel()
         state = when (phase) {
-            GamePhase.NIGHT -> state.copy(phase = phase, round = state.round + 1, nightActions = NightActions(), votes = emptyMap(), eliminatedThisRound = null)
-            GamePhase.DISCUSSION -> state.copy(phase = phase, votes = emptyMap())
-            GamePhase.VOTING -> state.copy(phase = phase, votes = emptyMap())
+            GamePhase.NIGHT -> state.copy(phase = phase, round = state.round + 1, nightActions = NightActions(), votes = emptyMap(), skips = emptySet(), eliminatedThisRound = null)
+            GamePhase.DISCUSSION -> state.copy(phase = phase, votes = emptyMap(), skips = emptySet())
+            GamePhase.VOTING -> state.copy(phase = phase, votes = emptyMap(), skips = emptySet())
             else -> state.copy(phase = phase)
         }
         val duration = when (phase) {
@@ -111,8 +111,15 @@ class GameSession(
     suspend fun submitVote(voterId: String, targetId: String) {
         state = engine.submitVote(state, voterId, targetId)
         val tally = state.votes.values.groupingBy { it }.eachCount()
-        broadcastAll(ServerMessage.VoteUpdate(voterId, targetId, tally))
-        if (engine.allVotesSubmitted(state)) { phaseTimerJob?.cancel(); resolveVoting() }
+        broadcastAll(ServerMessage.VoteUpdate(voterId, targetId, tally, state.skips))
+        if (engine.allVotedOrSkipped(state)) { phaseTimerJob?.cancel(); resolveVoting() }
+    }
+
+    suspend fun submitSkip(voterId: String) {
+        state = engine.submitSkip(state, voterId)
+        val tally = state.votes.values.groupingBy { it }.eachCount()
+        broadcastAll(ServerMessage.VoteUpdate(voterId, "SKIP", tally, state.skips))
+        if (engine.allVotedOrSkipped(state)) { phaseTimerJob?.cancel(); resolveVoting() }
     }
 
     private suspend fun resolveVoting() {

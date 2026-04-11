@@ -34,6 +34,9 @@ fun MafiaApp(repository: GameRepository) {
     val timer by repository.timer.collectAsState()
     val voteTally by repository.voteTally.collectAsState()
     val detectiveResult by repository.detectiveResult.collectAsState()
+    val nightSummary by repository.nightSummary.collectAsState()
+    val voteResult by repository.voteResult.collectAsState()
+    val voteLog by repository.voteLog.collectAsState()
     val lastEvent by repository.lastEvent.collectAsState(initial = null)
 
     LaunchedEffect(Unit) {
@@ -64,8 +67,9 @@ fun MafiaApp(repository: GameRepository) {
             is Screen.WaitingRoom -> room?.let { r -> myPlayerId?.let { pid ->
                 WaitingRoomScreen(r, pid, onStartGame = { repository.startGame() }, onLeave = { repository.leaveRoom(); currentScreen = Screen.Home })
             } }
-            is Screen.Game -> GameScreen(phase, round, myRole, myPlayerId, alivePlayers, chatMessages, timer, voteTally, detectiveResult, lastEvent,
+            is Screen.Game -> GameScreen(phase, round, myRole, myPlayerId, alivePlayers, chatMessages, timer, voteTally, detectiveResult, nightSummary, voteResult, voteLog, lastEvent,
                 onNightAction = { repository.submitNightAction(it) }, onSendChat = { repository.sendChat(it) }, onVote = { repository.castVote(it) },
+                onSkipVote = { repository.skipVote() },
                 onLeave = { repository.leaveRoom(); repository.resetForNewGame(); currentScreen = Screen.Home })
             is Screen.HowToPlay -> HowToPlayScreen(onBack = { currentScreen = Screen.Home })
         }
