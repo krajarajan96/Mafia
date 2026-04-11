@@ -12,7 +12,7 @@ data class Room(
 ) {
     val playerCount get() = players.size
     val isFull get() = playerCount >= maxPlayers
-    val canStart get() = playerCount >= minPlayers
+    val canStart get() = playerCount >= minPlayers || mode == GameMode.SINGLE_PLAYER
 }
 
 @Serializable enum class GameMode { SINGLE_PLAYER, MULTIPLAYER }

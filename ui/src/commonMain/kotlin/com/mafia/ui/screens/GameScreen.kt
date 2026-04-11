@@ -103,6 +103,39 @@ fun GameScreen(
                     val listState = rememberLazyListState()
                     LaunchedEffect(chatMessages.size) { if (chatMessages.isNotEmpty()) listState.animateScrollToItem(chatMessages.size - 1) }
                     Column(Modifier.fillMaxSize()) {
+                        // Detective: show investigation result banner + reveal button
+                        if (myRole == Role.DETECTIVE && detectiveResult != null) {
+                            val result = detectiveResult
+                            Surface(
+                                color = if (result.isMafia) MafiaRed.copy(0.15f) else TownGreen.copy(0.15f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        if (result.isMafia) "🔴 ${result.targetName} is Mafia" else "🟢 ${result.targetName} is innocent",
+                                        color = Color.White,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    OutlinedButton(
+                                        onClick = {
+                                            val verdict = if (result.isMafia) "MAFIA" else "innocent"
+                                            onSendChat("🔍 [Detective] I investigated ${result.targetName} — they are $verdict!")
+                                        },
+                                        border = ButtonDefaults.outlinedButtonBorder,
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                                    ) {
+                                        Text("Reveal", fontSize = 12.sp, color = Color.White)
+                                    }
+                                }
+                            }
+                        }
                         LazyColumn(state = listState, modifier = Modifier.weight(1f).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
                             items(chatMessages) { msg ->
                                 val isMine = msg.senderId == myPlayerId

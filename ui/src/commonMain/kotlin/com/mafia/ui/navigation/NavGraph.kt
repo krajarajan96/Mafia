@@ -1,6 +1,10 @@
 package com.mafia.ui.navigation
 
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
 import com.mafia.shared.model.*
 import com.mafia.shared.network.messages.ServerMessage
 import com.mafia.shared.repository.GameRepository
@@ -43,6 +47,7 @@ fun MafiaApp(repository: GameRepository) {
     }
 
     MafiaTheme(darkTheme = true) {
+        Box(Modifier.fillMaxSize().safeDrawingPadding()) {
         when (val screen = currentScreen) {
             is Screen.Home -> HomeScreen(
                 onSinglePlayer = { currentScreen = Screen.Lobby(false) },
@@ -61,5 +66,6 @@ fun MafiaApp(repository: GameRepository) {
                 onLeave = { repository.leaveRoom(); repository.resetForNewGame(); currentScreen = Screen.Home })
             is Screen.HowToPlay -> HowToPlayScreen(onBack = { currentScreen = Screen.Home })
         }
+        } // Box
     }
 }

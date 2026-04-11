@@ -2,8 +2,10 @@ package com.mafia.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,8 +27,9 @@ fun LobbyScreen(isMultiplayer: Boolean, onCreateRoom: (String, String, GameMode)
     var showJoin by remember { mutableStateOf(false) }
     val emojis = listOf("🕵️", "🦊", "🌹", "🌙", "🎭", "🦋", "🤠", "🌿", "🦖", "🌶️", "🐺", "🎩")
 
-    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF0F0A1E), Color(0xFF1A1145)))).padding(24.dp), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp)) {
+    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF0F0A1E), Color(0xFF1A1145)))).imePadding(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(20.dp),
+            modifier = Modifier.verticalScroll(rememberScrollState()).padding(24.dp)) {
             Text(if (isMultiplayer) "👥 Multiplayer" else "🕵️ Single Player", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White)
             Text("Choose your avatar", color = Color.White.copy(0.7f), fontSize = 14.sp)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

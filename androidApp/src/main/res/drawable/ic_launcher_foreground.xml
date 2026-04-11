@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Theatrical drama/comedy masks — foreground layer for adaptive icon.
+    Canvas: 108x108dp. Safe zone: centre 72x72dp (18dp inset each side).
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- ── Glow ring behind masks ── -->
+    <path
+        android:fillColor="#337C3AED"
+        android:pathData="M54,54 m-30,0 a30,30 0 1,0 60,0 a30,30 0 1,0 -60,0" />
+
+    <!-- ══════════════════════════════════════
+         COMEDY MASK  (right, slightly raised)
+         A simple rounded face with a smile
+         ══════════════════════════════════════ -->
+
+    <!-- Face -->
+    <path
+        android:fillColor="#F5F5F5"
+        android:pathData="
+            M62,30
+            C74,30 82,38 82,50
+            C82,62 74,72 62,72
+            C50,72 42,62 42,50
+            C42,38 50,30 62,30 Z" />
+
+    <!-- Left eye -->
+    <path
+        android:fillColor="#1A1145"
+        android:pathData="M56,45 C56,43 58,41 60,41 C62,41 64,43 64,45 C64,47 62,49 60,49 C58,49 56,47 56,45 Z" />
+
+    <!-- Right eye -->
+    <path
+        android:fillColor="#1A1145"
+        android:pathData="M64,45 C64,43 66,41 68,41 C70,41 72,43 72,45 C72,47 70,49 68,49 C66,49 64,47 64,45 Z" />
+
+    <!-- Smile -->
+    <path
+        android:fillColor="#1A1145"
+        android:strokeColor="#1A1145"
+        android:strokeWidth="2"
+        android:fillType="nonZero"
+        android:pathData="M55,58 Q62,66 69,58" />
+
+    <!-- Gold crown accent on comedy mask -->
+    <path
+        android:fillColor="#F59E0B"
+        android:pathData="M55,32 L57,27 L62,31 L67,27 L69,32 Z" />
+
+    <!-- ══════════════════════════════════════
+         TRAGEDY MASK  (left, slightly lower)
+         A rounded face with a frown
+         ══════════════════════════════════════ -->
+
+    <!-- Face -->
+    <path
+        android:fillColor="#E8E0FF"
+        android:pathData="
+            M46,38
+            C58,38 66,46 66,58
+            C66,70 58,80 46,80
+            C34,80 26,70 26,58
+            C26,46 34,38 46,38 Z" />
+
+    <!-- Left eye — angled sad -->
+    <path
+        android:fillColor="#1A1145"
+        android:pathData="M35,52 Q37,49 40,51 Q37,54 35,52 Z" />
+
+    <!-- Right eye — angled sad -->
+    <path
+        android:fillColor="#1A1145"
+        android:pathData="M52,51 Q55,49 57,52 Q54,54 52,51 Z" />
+
+    <!-- Frown -->
+    <path
+        android:fillColor="#1A1145"
+        android:strokeColor="#1A1145"
+        android:strokeWidth="2"
+        android:pathData="M36,68 Q46,61 56,68" />
+
+    <!-- Tears -->
+    <path
+        android:fillColor="#7C3AED"
+        android:pathData="M37,56 Q36,60 38,62 Q40,60 39,56 Z" />
+    <path
+        android:fillColor="#7C3AED"
+        android:pathData="M55,55 Q54,59 56,61 Q58,59 57,55 Z" />
+
+</vector>
