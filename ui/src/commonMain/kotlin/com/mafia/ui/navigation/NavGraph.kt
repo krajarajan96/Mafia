@@ -39,15 +39,7 @@ fun MafiaApp(repository: GameRepository) {
     LaunchedEffect(Unit) {
         repository.lastEvent.collect { event ->
             when (event) {
-                is ServerMessage.RoomCreated -> {
-                    if (event.room.mode == GameMode.SINGLE_PLAYER) {
-                        // Skip WaitingRoom for single player — start immediately
-                        repository.startGame()
-                    } else {
-                        currentScreen = Screen.WaitingRoom
-                    }
-                }
-                is ServerMessage.RoomJoined -> currentScreen = Screen.WaitingRoom
+                is ServerMessage.RoomCreated, is ServerMessage.RoomJoined -> currentScreen = Screen.WaitingRoom
                 is ServerMessage.GameStarted -> currentScreen = Screen.Game
                 else -> {}
             }
@@ -63,7 +55,10 @@ fun MafiaApp(repository: GameRepository) {
                 onHowToPlay = { currentScreen = Screen.HowToPlay }
             )
             is Screen.Lobby -> LobbyScreen(screen.isMultiplayer,
-                onCreateRoom = { n, e, m -> scope.launch { repository.createRoom(m, n, e) } },
+                onCreateRoom = { n, e, m ->
+                    if (m == GameMode.SINGLE_PLAYER) repository.startLocalGame(n, e)
+                    else scope.launch { repository.createRoom(m, n, e) }
+                },
                 onJoinRoom = { c, n, e -> scope.launch { repository.joinRoom(c, n, e) } },
                 onBack = { currentScreen = Screen.Home })
             is Screen.WaitingRoom -> room?.let { r -> myPlayerId?.let { pid ->
