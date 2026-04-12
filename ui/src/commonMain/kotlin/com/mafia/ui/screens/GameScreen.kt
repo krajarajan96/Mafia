@@ -315,13 +315,14 @@ private fun NightResultContent(nightSummary: ServerMessage.NightSummary?, eventL
                 }
             }
             // Vigilante results
-            if (nightSummary?.vigilanteKilled != null) {
+            val vigilanteKilled = nightSummary?.vigilanteKilled
+            if (vigilanteKilled != null) {
                 Spacer(Modifier.height(16.dp))
                 Surface(color = Color(0xFF3A2800).copy(0.6f), shape = RoundedCornerShape(12.dp)) {
                     Column(Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("🤠 Vigilante fired!", fontSize = 14.sp, color = Color(0xFFFFD600), fontWeight = FontWeight.Bold)
-                        Text("${nightSummary.vigilanteKilled.name} was shot by the Vigilante", fontSize = 13.sp, color = Color.White.copy(0.8f), textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
-                        if (nightSummary.vigilanteEliminated != null) {
+                        Text("${vigilanteKilled.name} was shot by the Vigilante", fontSize = 13.sp, color = Color.White.copy(0.8f), textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
+                        if (nightSummary?.vigilanteEliminated != null) {
                             Text("They were innocent — the Vigilante paid the price too.", fontSize = 13.sp, color = MafiaRed.copy(0.9f), textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
                         }
                     }
