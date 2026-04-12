@@ -221,7 +221,7 @@ class GameRepository(
         localSettings = GameSettings()
         val humanId = "local_player"
         _myPlayerId.value = humanId
-        val humanInfo = PlayerPublicInfo(id = humanId, name = playerName, avatarEmoji = playerEmoji, isHost = true, isAlive = true)
+        val humanInfo = PlayerPublicInfo(id = humanId, name = playerName, avatarEmoji = playerEmoji, isHost = true, isAI = false, isAlive = true, isConnected = true)
         val fakeRoom = Room(
             id = "local", code = "LOCAL",
             hostId = humanId, mode = GameMode.SINGLE_PLAYER,
