@@ -22,7 +22,7 @@ data class Room(
 data class GameSettings(
     val discussionTimeSec: Int = 90, val votingTimeSec: Int = 30,
     val nightTimeSec: Int = 30, val allowAIFill: Boolean = true,
-    val revealRoleOnDeath: Boolean = true, val anonymousVoting: Boolean = false,
+    val revealRoleOnDeath: Boolean = false, val anonymousVoting: Boolean = false,
     // Doctor is always on (base/classic role).
     // All others are optional specials — off by default (classic preset).
     val enableDoctor: Boolean = true,

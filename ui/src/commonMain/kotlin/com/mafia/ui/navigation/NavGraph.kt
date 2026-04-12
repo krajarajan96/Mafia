@@ -1,5 +1,6 @@
 package com.mafia.ui.navigation
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.Box
@@ -39,6 +40,7 @@ fun MafiaApp(repository: GameRepository) {
     val voteLog by repository.voteLog.collectAsState()
     val eventLog by repository.eventLog.collectAsState()
     val ministerVetoUsed by repository.ministerVetoUsed.collectAsState()
+    val revealedRoles by repository.revealedRoles.collectAsState()
     val lastEvent by repository.lastEvent.collectAsState(initial = null)
 
     LaunchedEffect(Unit) {
@@ -59,35 +61,48 @@ fun MafiaApp(repository: GameRepository) {
                     onMultiplayer = { currentScreen = Screen.Lobby(true) },
                     onHowToPlay = { currentScreen = Screen.HowToPlay }
                 )
-                is Screen.Lobby -> LobbyScreen(screen.isMultiplayer,
-                    onCreateRoom = { n, e, m ->
-                        if (m == GameMode.SINGLE_PLAYER) {
-                            repository.prepareLocalGame(n, e)
-                            currentScreen = Screen.WaitingRoom
-                        } else scope.launch { repository.createRoom(m, n, e) }
-                    },
-                    onJoinRoom = { c, n, e -> scope.launch { repository.joinRoom(c, n, e) } },
-                    onBack = { currentScreen = Screen.Home })
-                is Screen.WaitingRoom -> room?.let { r -> myPlayerId?.let { pid ->
-                    WaitingRoomScreen(
-                        r, pid,
-                        onStartGame = { repository.startGame() },
-                        onLeave = { repository.leaveRoom(); currentScreen = Screen.Home },
-                        onUpdateSettings = { repository.updateSettings(it) }
+                is Screen.Lobby -> {
+                    BackHandler { currentScreen = Screen.Home }
+                    LobbyScreen(screen.isMultiplayer,
+                        onCreateRoom = { n, e, m ->
+                            if (m == GameMode.SINGLE_PLAYER) {
+                                repository.prepareLocalGame(n, e)
+                                currentScreen = Screen.WaitingRoom
+                            } else scope.launch { repository.createRoom(m, n, e) }
+                        },
+                        onJoinRoom = { c, n, e -> scope.launch { repository.joinRoom(c, n, e) } },
+                        onBack = { currentScreen = Screen.Home })
+                }
+                is Screen.WaitingRoom -> {
+                    BackHandler { repository.leaveRoom(); currentScreen = Screen.Home }
+                    room?.let { r -> myPlayerId?.let { pid ->
+                        WaitingRoomScreen(
+                            r, pid,
+                            onStartGame = { repository.startGame() },
+                            onLeave = { repository.leaveRoom(); currentScreen = Screen.Home },
+                            onUpdateSettings = { repository.updateSettings(it) }
+                        )
+                    } }
+                }
+                is Screen.Game -> {
+                    // Intercept back press during game — do nothing (use Leave button instead)
+                    BackHandler {}
+                    GameScreen(
+                        phase, round, myRole, myPlayerId, alivePlayers, chatMessages, timer,
+                        voteTally, detectiveResult, nightSummary, voteResult, voteLog,
+                        eventLog, ministerVetoUsed, revealedRoles, lastEvent,
+                        onNightAction = { repository.submitNightAction(it) },
+                        onSendChat = { repository.sendChat(it) },
+                        onVote = { repository.castVote(it) },
+                        onSkipVote = { repository.skipVote() },
+                        onUseVeto = { repository.useMinisterVeto() },
+                        onLeave = { repository.leaveRoom(); repository.resetForNewGame(); currentScreen = Screen.Home }
                     )
-                } }
-                is Screen.Game -> GameScreen(
-                    phase, round, myRole, myPlayerId, alivePlayers, chatMessages, timer,
-                    voteTally, detectiveResult, nightSummary, voteResult, voteLog,
-                    eventLog, ministerVetoUsed, lastEvent,
-                    onNightAction = { repository.submitNightAction(it) },
-                    onSendChat = { repository.sendChat(it) },
-                    onVote = { repository.castVote(it) },
-                    onSkipVote = { repository.skipVote() },
-                    onUseVeto = { repository.useMinisterVeto() },
-                    onLeave = { repository.leaveRoom(); repository.resetForNewGame(); currentScreen = Screen.Home }
-                )
-                is Screen.HowToPlay -> HowToPlayScreen(onBack = { currentScreen = Screen.Home })
+                }
+                is Screen.HowToPlay -> {
+                    BackHandler { currentScreen = Screen.Home }
+                    HowToPlayScreen(onBack = { currentScreen = Screen.Home })
+                }
             }
         } // Box
     }

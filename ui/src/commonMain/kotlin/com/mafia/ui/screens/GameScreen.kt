@@ -12,12 +12,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mafia.shared.model.*
@@ -41,6 +39,7 @@ fun GameScreen(
     voteLog: List<VoteEntry>,
     eventLog: List<GameEvent>,
     ministerVetoUsed: Boolean,
+    revealedRoles: Map<String, Role>,
     lastEvent: ServerMessage?,
     onNightAction: (String) -> Unit, onSendChat: (String) -> Unit,
     onVote: (String) -> Unit, onSkipVote: () -> Unit,
@@ -89,20 +88,11 @@ fun GameScreen(
             }
         }
 
-        // Player strip (always visible except GAME_OVER and ROLE_REVEAL)
-        if (phase != GamePhase.GAME_OVER && phase != GamePhase.ROLE_REVEAL) {
-            Surface(color = Color.Black.copy(0.4f)) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    alivePlayers.take(8).forEach { p ->
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box(Modifier.size(36.dp).clip(CircleShape).background(if (p.id == myPlayerId) MafiaPurple.copy(0.4f) else Color.Transparent), contentAlignment = Alignment.Center) {
-                                Text(p.avatarEmoji, fontSize = 20.sp)
-                            }
-                            Text(if (p.id == myPlayerId) "You" else p.name, fontSize = 10.sp, color = if (p.isAlive) Color.White.copy(0.7f) else DeadGray, textDecoration = if (!p.isAlive) TextDecoration.LineThrough else null, maxLines = 1)
-                        }
-                    }
-                }
-            }
+        // Spectator banner — shown when local player is eliminated mid-game
+        val isEliminated = myPlayerId != null && phase != GamePhase.GAME_OVER &&
+            phase != GamePhase.ROLE_REVEAL && alivePlayers.none { it.id == myPlayerId }
+        if (isEliminated) {
+            SpectatorBanner(myRole, revealedRoles, alivePlayers)
         }
 
         // Bottom Tab Bar
@@ -118,6 +108,37 @@ fun GameScreen(
                         Text(tab.icon, fontSize = 20.sp)
                         Text(tab.label, fontSize = 11.sp, color = if (selected) MafiaPurple else Color.White.copy(0.4f), fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
                         if (selected) Box(Modifier.width(24.dp).height(2.dp).background(MafiaPurple, RoundedCornerShape(1.dp)))
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── Spectator Banner ──────────────────────────────────────────────────────────
+@Composable
+private fun SpectatorBanner(
+    myRole: Role?,
+    revealedRoles: Map<String, Role>,
+    alivePlayers: List<PlayerPublicInfo>
+) {
+    Surface(color = Color.Black.copy(0.6f), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("💀", fontSize = 16.sp)
+                Spacer(Modifier.width(6.dp))
+                Text("You are eliminated — Spectating", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DeadGray)
+            }
+            if (revealedRoles.isNotEmpty()) {
+                Spacer(Modifier.height(6.dp))
+                Text("Known roles:", fontSize = 11.sp, color = Color.White.copy(0.4f))
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    revealedRoles.entries.forEach { (playerId, role) ->
+                        val name = alivePlayers.find { it.id == playerId }?.name ?: "?"
+                        Surface(color = if (role.isMafia()) MafiaRed.copy(0.25f) else TownGreen.copy(0.2f), shape = RoundedCornerShape(6.dp)) {
+                            Text("${role.emoji} $name", Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, color = Color.White.copy(0.85f))
+                        }
                     }
                 }
             }

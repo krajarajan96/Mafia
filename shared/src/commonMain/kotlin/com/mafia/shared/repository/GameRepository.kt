@@ -48,6 +48,8 @@ class GameRepository(
     val eventLog: StateFlow<List<GameEvent>> = _eventLog.asStateFlow()
     private val _ministerVetoUsed = MutableStateFlow(false)
     val ministerVetoUsed: StateFlow<Boolean> = _ministerVetoUsed.asStateFlow()
+    private val _revealedRoles = MutableStateFlow<Map<String, Role>>(emptyMap())
+    val revealedRoles: StateFlow<Map<String, Role>> = _revealedRoles.asStateFlow()
     val connectionState = socket.connectionState
 
     // ── Local single-player state ───────────────────────────────────────────
@@ -85,6 +87,9 @@ class GameRepository(
             is ServerMessage.ChatReceived -> _chatMessages.value = _chatMessages.value + msg.message
             is ServerMessage.DetectiveResult -> _detectiveResult.value = msg
             is ServerMessage.NightSummary -> {
+                // Track revealed roles of eliminated players
+                if (msg.eliminatedPlayer != null && msg.eliminatedRole != null)
+                    _revealedRoles.value = _revealedRoles.value + (msg.eliminatedPlayer.id to msg.eliminatedRole)
                 _nightSummary.value = msg
                 val round = _round.value
                 val desc = when {
@@ -106,6 +111,9 @@ class GameRepository(
                 _voteLog.value = _voteLog.value + VoteEntry(voterName, targetName, isSkip)
             }
             is ServerMessage.VoteResult -> {
+                // Track revealed roles of eliminated players
+                if (msg.eliminatedPlayer != null && msg.eliminatedRole != null)
+                    _revealedRoles.value = _revealedRoles.value + (msg.eliminatedPlayer.id to msg.eliminatedRole)
                 _voteResult.value = msg
                 val round = _round.value
                 val desc = when {
@@ -208,7 +216,7 @@ class GameRepository(
         _detectiveResult.value = null; _voteTally.value = emptyMap()
         _nightSummary.value = null; _voteResult.value = null; _voteLog.value = emptyList()
         _round.value = 0; _alivePlayers.value = emptyList()
-        _eventLog.value = emptyList(); _ministerVetoUsed.value = false
+        _eventLog.value = emptyList(); _ministerVetoUsed.value = false; _revealedRoles.value = emptyMap()
     }
 
     // ── Local single-player game loop ───────────────────────────────────────
