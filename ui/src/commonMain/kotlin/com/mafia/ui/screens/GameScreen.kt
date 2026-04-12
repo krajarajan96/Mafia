@@ -76,14 +76,6 @@ fun GameScreen(
         }
         Surface(color = Color.Black.copy(0.4f), modifier = Modifier.fillMaxWidth()) {
             Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (phase != GamePhase.GAME_OVER) {
-                    TextButton(
-                        onClick = { showLeaveDialog = true },
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-                    ) {
-                        Text("✕", fontSize = 16.sp, color = Color.White.copy(0.4f))
-                    }
-                }
                 Column(Modifier.weight(1f)) {
                     if (round > 0) Text("Round $round", fontSize = 12.sp, color = Color.White.copy(0.5f))
                     Text(phase.displayName, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MafiaPurple)
@@ -99,8 +91,21 @@ fun GameScreen(
                         Text("${timerSeconds}s", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
+                if (phase != GamePhase.GAME_OVER) {
+                    Spacer(Modifier.width(12.dp))
+                    TextButton(
+                        onClick = { showLeaveDialog = true },
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                    ) {
+                        Text("🚪", fontSize = 18.sp)
+                    }
+                }
             }
         }
+
+        // Spectator banner — shown when local player is eliminated mid-game
+        val isEliminated = myPlayerId != null && phase != GamePhase.GAME_OVER &&
+            phase != GamePhase.ROLE_REVEAL && alivePlayers.none { it.id == myPlayerId }
 
         // Tab content area
         Box(Modifier.weight(1f)) {
@@ -109,16 +114,12 @@ fun GameScreen(
                 GameTab.ARENA -> ArenaTab(
                     phase, round, myRole, myPlayerId, alivePlayers, timerSeconds,
                     voteTally, detectiveResult, nightSummary, voteResult, voteLog,
-                    eventLog, ministerVetoUsed, allPlayers, lastEvent,
+                    eventLog, ministerVetoUsed, allPlayers, isEliminated, lastEvent,
                     onNightAction, onSendChat, onVote, onSkipVote, onUseVeto, onLeave
                 )
                 GameTab.CHAT -> ChatTab(chatMessages, myPlayerId, onSendChat)
             }
         }
-
-        // Spectator banner — shown when local player is eliminated mid-game
-        val isEliminated = myPlayerId != null && phase != GamePhase.GAME_OVER &&
-            phase != GamePhase.ROLE_REVEAL && alivePlayers.none { it.id == myPlayerId }
         if (isEliminated) {
             SpectatorBanner(myRole, revealedRoles, allPlayers)
         }
@@ -247,6 +248,7 @@ private fun ArenaTab(
     eventLog: List<GameEvent>,
     ministerVetoUsed: Boolean,
     allPlayers: List<PlayerPublicInfo>,
+    isSpectator: Boolean,
     lastEvent: ServerMessage?,
     onNightAction: (String) -> Unit,
     onSendChat: (String) -> Unit,
@@ -256,10 +258,10 @@ private fun ArenaTab(
     when (phase) {
         GamePhase.ROLE_REVEAL -> RoleRevealContent(myRole)
         GamePhase.NIGHT -> NightContent(myRole, myPlayerId, alivePlayers, onNightAction, eventLog)
-        GamePhase.NIGHT_RESULT -> NightResultContent(nightSummary, eventLog)
+        GamePhase.NIGHT_RESULT -> NightResultContent(nightSummary, isSpectator, eventLog)
         GamePhase.DISCUSSION -> DiscussionArenaContent(myRole, detectiveResult, alivePlayers, eventLog, onSendChat)
         GamePhase.VOTING -> VotingContent(myRole, myPlayerId, alivePlayers, voteTally, voteLog, ministerVetoUsed, eventLog, onVote, onSkipVote, onUseVeto)
-        GamePhase.ELIMINATION -> EliminationContent(voteResult, voteLog, eventLog)
+        GamePhase.ELIMINATION -> EliminationContent(voteResult, voteLog, isSpectator, eventLog)
         GamePhase.GAME_OVER -> GameOverContent(lastEvent, allPlayers, onLeave)
         else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -334,7 +336,7 @@ private fun NightContent(
 }
 
 @Composable
-private fun NightResultContent(nightSummary: ServerMessage.NightSummary?, eventLog: List<GameEvent>) {
+private fun NightResultContent(nightSummary: ServerMessage.NightSummary?, isSpectator: Boolean, eventLog: List<GameEvent>) {
     LazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, contentPadding = PaddingValues(32.dp)) {
         item {
             when {
@@ -350,10 +352,12 @@ private fun NightResultContent(nightSummary: ServerMessage.NightSummary?, eventL
                     Spacer(Modifier.height(12.dp))
                     Text("${dead!!.avatarEmoji} ${dead.name}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MafiaRed, textAlign = TextAlign.Center)
                     Text("was killed by the Mafia", fontSize = 16.sp, color = Color.White.copy(0.7f), textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
-                    nightSummary.eliminatedRole?.let { role ->
-                        Spacer(Modifier.height(8.dp))
-                        Surface(color = Color.White.copy(0.1f), shape = RoundedCornerShape(8.dp)) {
-                            Text("They were ${role.emoji} ${role.displayName}", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 13.sp, color = Color.White.copy(0.8f))
+                    if (isSpectator) {
+                        nightSummary.eliminatedRole?.let { role ->
+                            Spacer(Modifier.height(8.dp))
+                            Surface(color = Color.White.copy(0.1f), shape = RoundedCornerShape(8.dp)) {
+                                Text("They were ${role.emoji} ${role.displayName}", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 13.sp, color = Color.White.copy(0.8f))
+                            }
                         }
                     }
                 }
@@ -514,7 +518,7 @@ private fun VotingContent(
 }
 
 @Composable
-private fun EliminationContent(voteResult: ServerMessage.VoteResult?, voteLog: List<VoteEntry>, eventLog: List<GameEvent>) {
+private fun EliminationContent(voteResult: ServerMessage.VoteResult?, voteLog: List<VoteEntry>, isSpectator: Boolean, eventLog: List<GameEvent>) {
     LazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, contentPadding = PaddingValues(24.dp)) {
         item {
             val eliminated = voteResult?.eliminatedPlayer
@@ -524,10 +528,12 @@ private fun EliminationContent(voteResult: ServerMessage.VoteResult?, voteLog: L
                     Spacer(Modifier.height(12.dp))
                     Text("${eliminated.avatarEmoji} ${eliminated.name}", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = MafiaRed, textAlign = TextAlign.Center)
                     Text("has been eliminated by vote", fontSize = 16.sp, color = Color.White.copy(0.7f), textAlign = TextAlign.Center, modifier = Modifier.padding(top = 4.dp))
-                    voteResult.eliminatedRole?.let { role ->
-                        Spacer(Modifier.height(8.dp))
-                        Surface(color = if (role.isMafia()) MafiaRed.copy(0.2f) else TownGreen.copy(0.2f), shape = RoundedCornerShape(8.dp)) {
-                            Text("They were ${role.emoji} ${role.displayName}", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 13.sp, color = Color.White.copy(0.9f))
+                    if (isSpectator) {
+                        voteResult.eliminatedRole?.let { role ->
+                            Spacer(Modifier.height(8.dp))
+                            Surface(color = if (role.isMafia()) MafiaRed.copy(0.2f) else TownGreen.copy(0.2f), shape = RoundedCornerShape(8.dp)) {
+                                Text("They were ${role.emoji} ${role.displayName}", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 13.sp, color = Color.White.copy(0.9f))
+                            }
                         }
                     }
                 }
