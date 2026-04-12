@@ -58,6 +58,8 @@ class GameRepository(
     private var pendingNightAction: CompletableDeferred<String>? = null
     private var pendingVote: CompletableDeferred<String>? = null
     private var localMsgCounter = 0
+    private var localPlayerName: String = ""
+    private var localPlayerEmoji: String = ""
 
     init {
         scope.launch { socket.incoming.collect { handleMessage(it) } }
@@ -126,7 +128,14 @@ class GameRepository(
     fun joinRoom(code: String, name: String, emoji: String = "🕵️") =
         socket.send(ClientMessage.JoinRoom(code, name, emoji))
 
-    fun startGame() = socket.send(ClientMessage.StartGame)
+    fun startGame() {
+        if (isLocalGame) {
+            localGameJob?.cancel()
+            localGameJob = scope.launch { runLocalGame(localPlayerName, localPlayerEmoji) }
+        } else {
+            socket.send(ClientMessage.StartGame)
+        }
+    }
 
     fun accuse(targetId: String, reason: String) = socket.send(ClientMessage.Accuse(targetId, reason))
 
@@ -203,8 +212,29 @@ class GameRepository(
     }
 
     // ── Local single-player game loop ───────────────────────────────────────
+
+    /** Sets up a local game lobby so the host can configure settings in WaitingRoom before starting. */
+    fun prepareLocalGame(playerName: String, playerEmoji: String) {
+        isLocalGame = true
+        localPlayerName = playerName
+        localPlayerEmoji = playerEmoji
+        localSettings = GameSettings()
+        val humanId = "local_player"
+        _myPlayerId.value = humanId
+        val humanInfo = PlayerPublicInfo(id = humanId, name = playerName, avatarEmoji = playerEmoji, isHost = true, isAlive = true)
+        val fakeRoom = Room(
+            id = "local", code = "LOCAL",
+            hostId = humanId, mode = GameMode.SINGLE_PLAYER,
+            players = listOf(humanInfo)
+        )
+        _room.value = fakeRoom
+        scope.launch { _lastEvent.emit(ServerMessage.RoomCreated(fakeRoom, humanId)) }
+    }
+
     fun startLocalGame(playerName: String, playerEmoji: String, settings: GameSettings = GameSettings()) {
         isLocalGame = true
+        localPlayerName = playerName
+        localPlayerEmoji = playerEmoji
         localSettings = settings
         localGameJob?.cancel()
         localGameJob = scope.launch { runLocalGame(playerName, playerEmoji) }

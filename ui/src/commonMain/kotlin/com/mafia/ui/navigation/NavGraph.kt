@@ -61,8 +61,10 @@ fun MafiaApp(repository: GameRepository) {
                 )
                 is Screen.Lobby -> LobbyScreen(screen.isMultiplayer,
                     onCreateRoom = { n, e, m ->
-                        if (m == GameMode.SINGLE_PLAYER) repository.startLocalGame(n, e)
-                        else scope.launch { repository.createRoom(m, n, e) }
+                        if (m == GameMode.SINGLE_PLAYER) {
+                            repository.prepareLocalGame(n, e)
+                            currentScreen = Screen.WaitingRoom
+                        } else scope.launch { repository.createRoom(m, n, e) }
                     },
                     onJoinRoom = { c, n, e -> scope.launch { repository.joinRoom(c, n, e) } },
                     onBack = { currentScreen = Screen.Home })

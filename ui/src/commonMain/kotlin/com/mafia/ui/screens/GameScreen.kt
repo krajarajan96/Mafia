@@ -83,7 +83,7 @@ fun GameScreen(
                     phase, round, myRole, myPlayerId, alivePlayers, timerSeconds,
                     voteTally, detectiveResult, nightSummary, voteResult, voteLog,
                     eventLog, ministerVetoUsed, lastEvent,
-                    onNightAction, onVote, onSkipVote, onUseVeto, onLeave
+                    onNightAction, onSendChat, onVote, onSkipVote, onUseVeto, onLeave
                 )
                 GameTab.CHAT -> ChatTab(chatMessages, myPlayerId, onSendChat)
             }
@@ -199,6 +199,7 @@ private fun ArenaTab(
     ministerVetoUsed: Boolean,
     lastEvent: ServerMessage?,
     onNightAction: (String) -> Unit,
+    onSendChat: (String) -> Unit,
     onVote: (String) -> Unit, onSkipVote: () -> Unit,
     onUseVeto: () -> Unit, onLeave: () -> Unit
 ) {
@@ -206,7 +207,7 @@ private fun ArenaTab(
         GamePhase.ROLE_REVEAL -> RoleRevealContent(myRole)
         GamePhase.NIGHT -> NightContent(myRole, myPlayerId, alivePlayers, onNightAction, eventLog)
         GamePhase.NIGHT_RESULT -> NightResultContent(nightSummary, eventLog)
-        GamePhase.DISCUSSION -> DiscussionArenaContent(myRole, detectiveResult, alivePlayers, eventLog, onSendChat = {})
+        GamePhase.DISCUSSION -> DiscussionArenaContent(myRole, detectiveResult, alivePlayers, eventLog, onSendChat)
         GamePhase.VOTING -> VotingContent(myRole, myPlayerId, alivePlayers, voteTally, voteLog, ministerVetoUsed, eventLog, onVote, onSkipVote, onUseVeto)
         GamePhase.ELIMINATION -> EliminationContent(voteResult, voteLog, eventLog)
         GamePhase.GAME_OVER -> GameOverContent(lastEvent, onLeave)
