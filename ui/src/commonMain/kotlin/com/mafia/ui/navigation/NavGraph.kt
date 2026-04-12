@@ -1,6 +1,5 @@
 package com.mafia.ui.navigation
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.Box
@@ -9,6 +8,7 @@ import androidx.compose.ui.Modifier
 import com.mafia.shared.model.*
 import com.mafia.shared.network.messages.ServerMessage
 import com.mafia.shared.repository.GameRepository
+import com.mafia.ui.BackHandlerEffect
 import com.mafia.ui.screens.*
 import com.mafia.ui.theme.MafiaTheme
 import kotlinx.coroutines.launch
@@ -62,7 +62,7 @@ fun MafiaApp(repository: GameRepository) {
                     onHowToPlay = { currentScreen = Screen.HowToPlay }
                 )
                 is Screen.Lobby -> {
-                    BackHandler { currentScreen = Screen.Home }
+                    BackHandlerEffect { currentScreen = Screen.Home }
                     LobbyScreen(screen.isMultiplayer,
                         onCreateRoom = { n, e, m ->
                             if (m == GameMode.SINGLE_PLAYER) {
@@ -74,7 +74,7 @@ fun MafiaApp(repository: GameRepository) {
                         onBack = { currentScreen = Screen.Home })
                 }
                 is Screen.WaitingRoom -> {
-                    BackHandler { repository.leaveRoom(); currentScreen = Screen.Home }
+                    BackHandlerEffect { repository.leaveRoom(); currentScreen = Screen.Home }
                     room?.let { r -> myPlayerId?.let { pid ->
                         WaitingRoomScreen(
                             r, pid,
@@ -86,7 +86,7 @@ fun MafiaApp(repository: GameRepository) {
                 }
                 is Screen.Game -> {
                     // Intercept back press during game — do nothing (use Leave button instead)
-                    BackHandler {}
+                    BackHandlerEffect {}
                     GameScreen(
                         phase, round, myRole, myPlayerId, alivePlayers, chatMessages, timer,
                         voteTally, detectiveResult, nightSummary, voteResult, voteLog,
@@ -100,7 +100,7 @@ fun MafiaApp(repository: GameRepository) {
                     )
                 }
                 is Screen.HowToPlay -> {
-                    BackHandler { currentScreen = Screen.Home }
+                    BackHandlerEffect { currentScreen = Screen.Home }
                     HowToPlayScreen(onBack = { currentScreen = Screen.Home })
                 }
             }
