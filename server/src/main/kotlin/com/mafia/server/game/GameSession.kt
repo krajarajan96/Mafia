@@ -40,7 +40,7 @@ class GameSession(
             state = state.copy(players = state.players + AI_PERSONALITIES.shuffled().take(needed))
             room = room.copy(players = state.players.map { PlayerPublicInfo.from(it) })
         }
-        state = state.copy(players = engine.assignRoles(state.players))
+        state = state.copy(players = engine.assignRoles(state.players, room.settings))
         room = room.copy(status = RoomStatus.IN_GAME)
         broadcastAll(ServerMessage.GameStarted(state.players.size))
         state.players.forEach { p -> p.role?.let { sendTo(p.id, ServerMessage.RoleAssigned(it)) } }
@@ -97,13 +97,27 @@ class GameSession(
         if (engine.allNightActionsSubmitted(state)) { phaseTimerJob?.cancel(); resolveNight() }
     }
 
+    suspend fun submitMinisterVeto(playerId: String) {
+        state = engine.submitMinisterVeto(state, playerId)
+    }
+
+    fun updateSettings(settings: GameSettings) {
+        room = room.copy(settings = settings)
+        broadcastAll(ServerMessage.SettingsUpdated(settings))
+    }
+
     private suspend fun resolveNight() {
+        val prevState = state
         state = engine.processNightActions(state)
         val eliminated = state.eliminatedThisRound?.let { state.getPlayer(it) }
+        val vigilanteKilled = prevState.nightActions.resolve().vigilanteTargetId?.let { state.getPlayer(it) }
+        val vigilanteElim = state.vigilanteEliminated?.let { state.getPlayer(it) }
         broadcastAll(ServerMessage.NightSummary(
             eliminated?.let { PlayerPublicInfo.from(it) },
             if (room.settings.revealRoleOnDeath) eliminated?.role else null,
-            state.savedThisNight
+            state.savedThisNight,
+            vigilanteKilled?.let { PlayerPublicInfo.from(it) },
+            vigilanteElim?.let { PlayerPublicInfo.from(it) }
         ))
         if (state.winner != null) endGame(state.winner!!) else transitionTo(GamePhase.NIGHT_RESULT)
     }

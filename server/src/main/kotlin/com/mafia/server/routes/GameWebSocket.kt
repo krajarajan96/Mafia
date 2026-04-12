@@ -47,6 +47,11 @@ fun Routing.configureGameWebSocket(manager: GameSessionManager) {
                         is ClientMessage.SendChat -> currentRoomId?.let { manager.findByRoomId(it) }?.let { s -> playerId?.let { s.handleChat(it, msg.text) } }
                         is ClientMessage.CastVote -> currentRoomId?.let { manager.findByRoomId(it) }?.let { s -> playerId?.let { s.submitVote(it, msg.targetId) } }
                         is ClientMessage.SkipVote -> currentRoomId?.let { manager.findByRoomId(it) }?.let { s -> playerId?.let { s.submitSkip(it) } }
+                        is ClientMessage.UseVeto -> currentRoomId?.let { manager.findByRoomId(it) }?.let { s -> playerId?.let { s.submitMinisterVeto(it) } }
+                        is ClientMessage.UpdateSettings -> {
+                            val session = currentRoomId?.let { manager.findByRoomId(it) }
+                            if (session != null && playerId == session.room.hostId) session.updateSettings(msg.settings)
+                        }
                         is ClientMessage.Accuse -> currentRoomId?.let { manager.findByRoomId(it) }?.let { s -> playerId?.let { s.handleChat(it, "I accuse ${msg.targetId}: ${msg.reason}") } }
                         is ClientMessage.LeaveRoom -> { handleDisconnect(manager, playerId, currentRoomId); playerId = null; currentRoomId = null }
                         is ClientMessage.Ready -> {}

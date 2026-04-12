@@ -55,13 +55,6 @@ fun HowToPlayScreen(onBack: () -> Unit) {
             TownGreen
         )
         InfoCard(
-            "🔍", "Detective  (Town)",
-            "Each night you secretly investigate one player and learn whether they are Mafia or innocent. " +
-            "During Discussion you can reveal your findings with the Reveal button, or stay silent to protect your identity. " +
-            "Use your knowledge carefully — the Mafia will try to eliminate you once exposed.",
-            MafiaPurple
-        )
-        InfoCard(
             "💉", "Doctor  (Town)",
             "Each night you choose one player to protect. If the Mafia targets that player, " +
             "the kill is blocked and they survive. You can protect yourself, but you cannot save the same person two nights in a row.",
@@ -75,6 +68,39 @@ fun HowToPlayScreen(onBack: () -> Unit) {
             MafiaRed
         )
 
+        // ── SPECIAL ROLES ──────────────────────────────────────────
+        Spacer(Modifier.height(8.dp))
+        Text("Special Roles  (enable in Game Settings)", fontSize = 13.sp, color = Color.White.copy(0.4f), fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(4.dp))
+        InfoCard(
+            "🔍", "Detective  (Town · Special)",
+            "Each night you secretly investigate one player and learn whether they are Mafia or innocent. " +
+            "During Discussion you can reveal your findings with the Reveal button, or stay silent to protect your identity. " +
+            "Use your knowledge carefully — the Mafia will try to eliminate you once exposed.",
+            MafiaPurple
+        )
+        InfoCard(
+            "🤠", "Vigilante  (Town · Special)",
+            "Once per game, choose one player to shoot at night. If your target is Mafia — great shot! " +
+            "If your target is innocent Town, you feel the guilt and die too. " +
+            "Enable in Game Settings before starting.",
+            Color(0xFFD4A017)
+        )
+        InfoCard(
+            "💃", "Escort  (Town · Optional)",
+            "Each night, choose one player to keep busy — blocking their night action entirely. " +
+            "If you block the Mafia, no one dies that night. If you block the Detective, they get no result. " +
+            "A powerful disruptor. Enable in Game Settings.",
+            Color(0xFFE91E8C)
+        )
+        InfoCard(
+            "🏛️", "Minister  (Town · Optional)",
+            "Once per game, secretly veto the day's elimination vote. " +
+            "No one is told who used the veto — it appears as a failed vote. " +
+            "Use it strategically to save an innocent from a mob verdict. Enable in Game Settings.",
+            Color(0xFFFFD600)
+        )
+
         // ── ROLE DISTRIBUTION ──────────────────────────────────────
         Spacer(Modifier.height(20.dp))
         SectionHeader("🎲 Role Distribution")
@@ -84,9 +110,15 @@ fun HowToPlayScreen(onBack: () -> Unit) {
             modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                DistributionRow("5–6 players", "1 Mafia · 1 Detective · 1 Doctor · 2–3 Townsfolk")
-                DistributionRow("7–8 players", "2 Mafia · 1 Detective · 1 Doctor · 3–4 Townsfolk")
-                DistributionRow("9–10 players", "3 Mafia · 1 Detective · 1 Doctor · 5–6 Townsfolk")
+                Text("Classic (no specials)", fontSize = 11.sp, color = Color.White.copy(0.4f), fontWeight = FontWeight.SemiBold)
+                DistributionRow("5–6 players", "1 Mafia · 1 Doctor · 3–4 Townsfolk")
+                DistributionRow("7–8 players", "2 Mafia · 1 Doctor · 4–5 Townsfolk")
+                DistributionRow("9–10 players", "3 Mafia · 1 Doctor · 5–6 Townsfolk")
+                Spacer(Modifier.height(4.dp))
+                Text("Special slots (per player count)", fontSize = 11.sp, color = Color.White.copy(0.4f), fontWeight = FontWeight.SemiBold)
+                DistributionRow("5 or 7 or 9p", "1 special slot")
+                DistributionRow("6 or 8 or 10p", "2 special slots")
+                Text("Townsfolk always outnumber Mafia.", fontSize = 11.sp, color = Color.White.copy(0.3f))
             }
         }
 
@@ -102,6 +134,8 @@ fun HowToPlayScreen(onBack: () -> Unit) {
             "• Mafia picks someone to eliminate\n" +
             "• Detective picks someone to investigate\n" +
             "• Doctor picks someone to protect\n" +
+            "• Vigilante (optional) picks someone to shoot\n" +
+            "• Escort (optional) picks someone to block\n" +
             "Townsfolk wait for dawn.",
             Color(0xFF6366F1))
         FlowStep("3", "🌅", "Night Result  (6 s)",
@@ -114,8 +148,9 @@ fun HowToPlayScreen(onBack: () -> Unit) {
             "Mafia players must lie convincingly to survive.",
             MafiaGold)
         FlowStep("5", "🗳️", "Voting  (30 s)",
-            "Each player casts one vote for who they believe is Mafia. " +
-            "The player with the most votes is eliminated. Ties result in no elimination.",
+            "Each player casts one vote for who they believe is Mafia, or skips/abstains. " +
+            "The player with the most votes is eliminated. Ties result in no elimination. " +
+            "The Minister (if enabled) can secretly veto the result — it appears as no elimination with no explanation.",
             MafiaRed)
         FlowStep("6", "⚰️", "Elimination  (6 s)",
             "The voted-out player's role is revealed. The game then checks win conditions " +

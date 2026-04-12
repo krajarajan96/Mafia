@@ -37,6 +37,8 @@ fun MafiaApp(repository: GameRepository) {
     val nightSummary by repository.nightSummary.collectAsState()
     val voteResult by repository.voteResult.collectAsState()
     val voteLog by repository.voteLog.collectAsState()
+    val eventLog by repository.eventLog.collectAsState()
+    val ministerVetoUsed by repository.ministerVetoUsed.collectAsState()
     val lastEvent by repository.lastEvent.collectAsState(initial = null)
 
     LaunchedEffect(Unit) {
@@ -51,28 +53,40 @@ fun MafiaApp(repository: GameRepository) {
 
     MafiaTheme(darkTheme = true) {
         Box(Modifier.fillMaxSize().safeDrawingPadding()) {
-        when (val screen = currentScreen) {
-            is Screen.Home -> HomeScreen(
-                onSinglePlayer = { currentScreen = Screen.Lobby(false) },
-                onMultiplayer = { currentScreen = Screen.Lobby(true) },
-                onHowToPlay = { currentScreen = Screen.HowToPlay }
-            )
-            is Screen.Lobby -> LobbyScreen(screen.isMultiplayer,
-                onCreateRoom = { n, e, m ->
-                    if (m == GameMode.SINGLE_PLAYER) repository.startLocalGame(n, e)
-                    else scope.launch { repository.createRoom(m, n, e) }
-                },
-                onJoinRoom = { c, n, e -> scope.launch { repository.joinRoom(c, n, e) } },
-                onBack = { currentScreen = Screen.Home })
-            is Screen.WaitingRoom -> room?.let { r -> myPlayerId?.let { pid ->
-                WaitingRoomScreen(r, pid, onStartGame = { repository.startGame() }, onLeave = { repository.leaveRoom(); currentScreen = Screen.Home })
-            } }
-            is Screen.Game -> GameScreen(phase, round, myRole, myPlayerId, alivePlayers, chatMessages, timer, voteTally, detectiveResult, nightSummary, voteResult, voteLog, lastEvent,
-                onNightAction = { repository.submitNightAction(it) }, onSendChat = { repository.sendChat(it) }, onVote = { repository.castVote(it) },
-                onSkipVote = { repository.skipVote() },
-                onLeave = { repository.leaveRoom(); repository.resetForNewGame(); currentScreen = Screen.Home })
-            is Screen.HowToPlay -> HowToPlayScreen(onBack = { currentScreen = Screen.Home })
-        }
+            when (val screen = currentScreen) {
+                is Screen.Home -> HomeScreen(
+                    onSinglePlayer = { currentScreen = Screen.Lobby(false) },
+                    onMultiplayer = { currentScreen = Screen.Lobby(true) },
+                    onHowToPlay = { currentScreen = Screen.HowToPlay }
+                )
+                is Screen.Lobby -> LobbyScreen(screen.isMultiplayer,
+                    onCreateRoom = { n, e, m ->
+                        if (m == GameMode.SINGLE_PLAYER) repository.startLocalGame(n, e)
+                        else scope.launch { repository.createRoom(m, n, e) }
+                    },
+                    onJoinRoom = { c, n, e -> scope.launch { repository.joinRoom(c, n, e) } },
+                    onBack = { currentScreen = Screen.Home })
+                is Screen.WaitingRoom -> room?.let { r -> myPlayerId?.let { pid ->
+                    WaitingRoomScreen(
+                        r, pid,
+                        onStartGame = { repository.startGame() },
+                        onLeave = { repository.leaveRoom(); currentScreen = Screen.Home },
+                        onUpdateSettings = { repository.updateSettings(it) }
+                    )
+                } }
+                is Screen.Game -> GameScreen(
+                    phase, round, myRole, myPlayerId, alivePlayers, chatMessages, timer,
+                    voteTally, detectiveResult, nightSummary, voteResult, voteLog,
+                    eventLog, ministerVetoUsed, lastEvent,
+                    onNightAction = { repository.submitNightAction(it) },
+                    onSendChat = { repository.sendChat(it) },
+                    onVote = { repository.castVote(it) },
+                    onSkipVote = { repository.skipVote() },
+                    onUseVeto = { repository.useMinisterVeto() },
+                    onLeave = { repository.leaveRoom(); repository.resetForNewGame(); currentScreen = Screen.Home }
+                )
+                is Screen.HowToPlay -> HowToPlayScreen(onBack = { currentScreen = Screen.Home })
+            }
         } // Box
     }
 }

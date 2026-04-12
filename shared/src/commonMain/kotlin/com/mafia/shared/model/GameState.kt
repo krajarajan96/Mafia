@@ -13,7 +13,10 @@ data class GameState(
     val votes: Map<String, String> = emptyMap(),
     val skips: Set<String> = emptySet(),
     val eliminatedThisRound: String? = null,
+    val vigilanteEliminated: String? = null,
     val savedThisNight: Boolean = false,
+    val ministerVetoUsed: Boolean = false,
+    val ministerVetoThisRound: Boolean = false,
     val winner: Team? = null,
     val chatMessages: List<ChatMessage> = emptyList()
 ) {
@@ -46,20 +49,36 @@ data class GameState(
 data class NightActions(
     val mafiaTarget: String? = null,
     val doctorProtect: String? = null,
-    val detectiveInvestigate: String? = null
+    val detectiveInvestigate: String? = null,
+    val vigilanteTarget: String? = null,
+    val escortBlock: String? = null
 ) {
     fun resolve(): NightResolution {
-        val killed = mafiaTarget != null && mafiaTarget != doctorProtect
+        // Escort block nullifies the blocked player's action
+        val effectiveMafiaTarget = if (mafiaTarget != null && mafiaTarget == escortBlock) null else mafiaTarget
+        val effectiveVigilanteTarget = if (vigilanteTarget != null && vigilanteTarget == escortBlock) null else vigilanteTarget
+        val effectiveDetective = if (detectiveInvestigate != null && detectiveInvestigate == escortBlock) null else detectiveInvestigate
+        val effectiveDoctor = if (doctorProtect != null && doctorProtect == escortBlock) null else doctorProtect
+
+        val mafiaKilled = effectiveMafiaTarget != null && effectiveMafiaTarget != effectiveDoctor
+        val wasSaved = effectiveMafiaTarget != null && effectiveMafiaTarget == effectiveDoctor
+
         return NightResolution(
-            eliminatedId = if (killed) mafiaTarget else null,
-            wasSaved = mafiaTarget != null && mafiaTarget == doctorProtect,
-            investigatedId = detectiveInvestigate
+            eliminatedId = if (mafiaKilled) effectiveMafiaTarget else null,
+            wasSaved = wasSaved,
+            investigatedId = effectiveDetective,
+            vigilanteTargetId = effectiveVigilanteTarget
         )
     }
 }
 
 @Serializable
-data class NightResolution(val eliminatedId: String?, val wasSaved: Boolean, val investigatedId: String?)
+data class NightResolution(
+    val eliminatedId: String?,
+    val wasSaved: Boolean,
+    val investigatedId: String?,
+    val vigilanteTargetId: String? = null
+)
 
 @Serializable
 data class ChatMessage(
@@ -69,3 +88,11 @@ data class ChatMessage(
 
 /** A single entry in the voting log shown to all players. */
 data class VoteEntry(val voterName: String, val targetName: String, val isSkip: Boolean)
+
+/** An entry in the game event history shown in the Arena tab. */
+data class GameEvent(
+    val round: Int,
+    val label: String,
+    val description: String,
+    val isElimination: Boolean = false
+)

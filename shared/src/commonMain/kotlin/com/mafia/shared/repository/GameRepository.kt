@@ -44,11 +44,16 @@ class GameRepository(
     val voteResult: StateFlow<ServerMessage.VoteResult?> = _voteResult.asStateFlow()
     private val _voteLog = MutableStateFlow<List<VoteEntry>>(emptyList())
     val voteLog: StateFlow<List<VoteEntry>> = _voteLog.asStateFlow()
+    private val _eventLog = MutableStateFlow<List<GameEvent>>(emptyList())
+    val eventLog: StateFlow<List<GameEvent>> = _eventLog.asStateFlow()
+    private val _ministerVetoUsed = MutableStateFlow(false)
+    val ministerVetoUsed: StateFlow<Boolean> = _ministerVetoUsed.asStateFlow()
     val connectionState = socket.connectionState
 
     // ── Local single-player state ───────────────────────────────────────────
     private var isLocalGame = false
     private var localState: GameState? = null
+    private var localSettings: GameSettings = GameSettings()
     private var localGameJob: Job? = null
     private var pendingNightAction: CompletableDeferred<String>? = null
     private var pendingVote: CompletableDeferred<String>? = null
@@ -77,7 +82,20 @@ class GameRepository(
             is ServerMessage.TimerTick -> _timer.value = msg.secondsRemaining
             is ServerMessage.ChatReceived -> _chatMessages.value = _chatMessages.value + msg.message
             is ServerMessage.DetectiveResult -> _detectiveResult.value = msg
-            is ServerMessage.NightSummary -> _nightSummary.value = msg
+            is ServerMessage.NightSummary -> {
+                _nightSummary.value = msg
+                val round = _round.value
+                val desc = when {
+                    msg.wasSaved -> "Someone was saved by the Doctor"
+                    msg.eliminatedPlayer != null -> "${msg.eliminatedPlayer.name} was killed by the Mafia"
+                    else -> "A quiet night — no one was harmed"
+                }
+                val vigilanteDesc = if (msg.vigilanteKilled != null) {
+                    " | Vigilante shot ${msg.vigilanteKilled.name}" +
+                        if (msg.vigilanteEliminated != null) " (backfired — Vigilante died too)" else ""
+                } else ""
+                _eventLog.value = _eventLog.value + GameEvent(round, "Night $round", desc + vigilanteDesc, msg.eliminatedPlayer != null)
+            }
             is ServerMessage.VoteUpdate -> {
                 _voteTally.value = msg.currentTally
                 val voterName = _alivePlayers.value.find { it.id == msg.voterId }?.name ?: msg.voterId
@@ -85,8 +103,18 @@ class GameRepository(
                 val targetName = if (isSkip) "Skip" else (_alivePlayers.value.find { it.id == msg.targetId }?.name ?: msg.targetId)
                 _voteLog.value = _voteLog.value + VoteEntry(voterName, targetName, isSkip)
             }
-            is ServerMessage.VoteResult -> _voteResult.value = msg
+            is ServerMessage.VoteResult -> {
+                _voteResult.value = msg
+                val round = _round.value
+                val desc = when {
+                    msg.eliminatedPlayer != null -> "${msg.eliminatedPlayer.name} was eliminated by vote"
+                    msg.wasTie -> "Vote ended in a tie — no elimination"
+                    else -> "No elimination (vote failed or vetoed)"
+                }
+                _eventLog.value = _eventLog.value + GameEvent(round, "Vote $round", desc, msg.eliminatedPlayer != null)
+            }
             is ServerMessage.GameOver -> _phase.value = GamePhase.GAME_OVER
+            is ServerMessage.SettingsUpdated -> _room.value = _room.value?.copy(settings = msg.settings)
             else -> {}
         }
     }
@@ -134,6 +162,25 @@ class GameRepository(
         else socket.send(ClientMessage.SkipVote)
     }
 
+    fun useMinisterVeto() {
+        if (isLocalGame) {
+            val playerId = _myPlayerId.value ?: return
+            localState = engine.submitMinisterVeto(localState ?: return, playerId)
+            _ministerVetoUsed.value = localState?.ministerVetoUsed == true
+            pendingVote?.complete(SKIP_VOTE) // advance voting phase
+        } else {
+            socket.send(ClientMessage.UseVeto)
+        }
+    }
+
+    fun updateSettings(settings: GameSettings) {
+        if (isLocalGame) {
+            localSettings = settings
+        } else {
+            socket.send(ClientMessage.UpdateSettings(settings))
+        }
+    }
+
     fun leaveRoom() {
         if (isLocalGame) {
             localGameJob?.cancel()
@@ -152,11 +199,13 @@ class GameRepository(
         _detectiveResult.value = null; _voteTally.value = emptyMap()
         _nightSummary.value = null; _voteResult.value = null; _voteLog.value = emptyList()
         _round.value = 0; _alivePlayers.value = emptyList()
+        _eventLog.value = emptyList(); _ministerVetoUsed.value = false
     }
 
     // ── Local single-player game loop ───────────────────────────────────────
-    fun startLocalGame(playerName: String, playerEmoji: String) {
+    fun startLocalGame(playerName: String, playerEmoji: String, settings: GameSettings = GameSettings()) {
         isLocalGame = true
+        localSettings = settings
         localGameJob?.cancel()
         localGameJob = scope.launch { runLocalGame(playerName, playerEmoji) }
     }
@@ -165,7 +214,7 @@ class GameRepository(
         val humanId = "local_player"
         val human = Player(id = humanId, name = playerName, avatarEmoji = playerEmoji, isHost = true)
         val bots = AI_PERSONALITIES.shuffled().take(4)
-        val allPlayers = engine.assignRoles(listOf(human) + bots)
+        val allPlayers = engine.assignRoles(listOf(human) + bots, localSettings)
 
         localState = GameState(roomId = "local", players = allPlayers, round = 0)
         _myPlayerId.value = humanId
@@ -178,6 +227,8 @@ class GameRepository(
         _detectiveResult.value = null
         _nightSummary.value = null
         _voteResult.value = null
+        _eventLog.value = emptyList()
+        _ministerVetoUsed.value = false
 
         _lastEvent.emit(ServerMessage.GameStarted(allPlayers.size))
         localPhase(GamePhase.ROLE_REVEAL, GamePhase.ROLE_REVEAL.defaultDurationSeconds)
@@ -190,7 +241,8 @@ class GameRepository(
             localState = localState!!.copy(
                 round = round, nightActions = NightActions(),
                 votes = emptyMap(), skips = emptySet(),
-                eliminatedThisRound = null, savedThisNight = false
+                eliminatedThisRound = null, vigilanteEliminated = null,
+                savedThisNight = false, ministerVetoThisRound = false
             )
             _detectiveResult.value = null
             _voteTally.value = emptyMap()
@@ -221,11 +273,23 @@ class GameRepository(
 
             localState = engine.processNightActions(localState!!)
             val nightElim = localState!!.eliminatedThisRound?.let { localState!!.getPlayer(it) }
+            val vigilanteKilledPlayer = localState!!.nightActions.resolve().vigilanteTargetId?.let { localState!!.getPlayer(it) }
+            val vigilanteEliminatedPlayer = localState!!.vigilanteEliminated?.let { localState!!.getPlayer(it) }
             val summary = ServerMessage.NightSummary(
-                nightElim?.let { PlayerPublicInfo.from(it) }, nightElim?.role, localState!!.savedThisNight
+                nightElim?.let { PlayerPublicInfo.from(it) }, nightElim?.role, localState!!.savedThisNight,
+                vigilanteKilledPlayer?.let { PlayerPublicInfo.from(it) },
+                vigilanteEliminatedPlayer?.let { PlayerPublicInfo.from(it) }
             )
             _nightSummary.value = summary
             _lastEvent.emit(summary)
+
+            // Append night event log
+            val nightDesc = when {
+                summary.wasSaved -> "Someone was saved by the Doctor"
+                summary.eliminatedPlayer != null -> "${summary.eliminatedPlayer.name} was killed by the Mafia"
+                else -> "A quiet night — no one was harmed"
+            }
+            _eventLog.value = _eventLog.value + GameEvent(round, "Night $round", nightDesc, summary.eliminatedPlayer != null)
 
             localState!!.checkWinCondition()?.let { endLocalGame(it); return }
 
@@ -237,7 +301,7 @@ class GameRepository(
             localPhase(GamePhase.DISCUSSION, GamePhase.DISCUSSION.defaultDurationSeconds)
 
             // ── VOTING ───────────────────────────────────────────────────────
-            localState = localState!!.copy(votes = emptyMap(), skips = emptySet())
+            localState = localState!!.copy(votes = emptyMap(), skips = emptySet(), ministerVetoThisRound = false)
             _voteLog.value = emptyList()
             pendingVote = CompletableDeferred()
             val voteDeferred = pendingVote!!
@@ -275,6 +339,13 @@ class GameRepository(
             )
             _voteResult.value = voteResultMsg
             _lastEvent.emit(voteResultMsg)
+
+            // Append vote event log
+            val voteDesc = when {
+                eliminatedV != null -> "${eliminatedV.name} was eliminated by vote"
+                else -> "No elimination (tie or veto)"
+            }
+            _eventLog.value = _eventLog.value + GameEvent(round, "Vote $round", voteDesc, eliminatedV != null)
 
             localState!!.checkWinCondition()?.let { endLocalGame(it); return }
 
@@ -326,6 +397,8 @@ class GameRepository(
                 Role.MAFIA -> state.alivePlayers.filter { it.role?.isMafia() != true }.randomOrNull()?.id
                 Role.DETECTIVE -> state.alivePlayers.filter { it.id != bot.id }.randomOrNull()?.id
                 Role.DOCTOR -> state.alivePlayers.randomOrNull()?.id
+                Role.VIGILANTE -> state.alivePlayers.filter { it.id != bot.id }.randomOrNull()?.id
+                Role.ESCORT -> state.alivePlayers.filter { it.id != bot.id }.randomOrNull()?.id
                 else -> null
             }
             target?.let { localState = engine.submitNightAction(localState!!, bot.id, it) }
