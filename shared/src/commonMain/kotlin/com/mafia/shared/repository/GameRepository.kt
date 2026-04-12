@@ -259,7 +259,7 @@ class GameRepository(
     private suspend fun runLocalGame(playerName: String, playerEmoji: String) {
         val humanId = "local_player"
         val human = Player(id = humanId, name = playerName, avatarEmoji = playerEmoji, isHost = true)
-        val bots = AI_PERSONALITIES.shuffled().take(4)
+        val bots = AI_PERSONALITIES.shuffled().take(localSettings.botCount)
         val allPlayers = engine.assignRoles(listOf(human) + bots, localSettings)
 
         localState = GameState(roomId = "local", players = allPlayers, round = 0)
@@ -320,6 +320,10 @@ class GameRepository(
             }
 
             localState = engine.processNightActions(localState!!)
+            // If human was eliminated, reveal all roles so they can spectate with full info
+            if (localState!!.getPlayer(humanId)?.isAlive == false && _revealedRoles.value.size < localState!!.players.size) {
+                _revealedRoles.value = localState!!.players.associate { it.id to (it.role ?: Role.TOWNSFOLK) }
+            }
             val nightElim = localState!!.eliminatedThisRound?.let { localState!!.getPlayer(it) }
             val vigilanteKilledPlayer = localState!!.nightActions.resolve().vigilanteTargetId?.let { localState!!.getPlayer(it) }
             val vigilanteEliminatedPlayer = localState!!.vigilanteEliminated?.let { localState!!.getPlayer(it) }
@@ -383,6 +387,10 @@ class GameRepository(
 
             val eliminatedVId = localState!!.voteResult()
             localState = engine.processVote(localState!!)
+            // If human was voted out, reveal all roles
+            if (localState!!.getPlayer(humanId)?.isAlive == false && _revealedRoles.value.size < localState!!.players.size) {
+                _revealedRoles.value = localState!!.players.associate { it.id to (it.role ?: Role.TOWNSFOLK) }
+            }
             val eliminatedV = eliminatedVId?.let { localState!!.getPlayer(it) }
             val tally = localState!!.votes.values.groupingBy { it }.eachCount()
             val voteResultMsg = ServerMessage.VoteResult(

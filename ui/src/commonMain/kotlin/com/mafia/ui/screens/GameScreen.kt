@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mafia.shared.model.*
@@ -75,29 +76,34 @@ fun GameScreen(
             )
         }
         Surface(color = Color.Black.copy(0.4f), modifier = Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    if (round > 0) Text("Round $round", fontSize = 12.sp, color = Color.White.copy(0.5f))
-                    Text(phase.displayName, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MafiaPurple)
+                    if (round > 0) Text("Round $round", fontSize = 11.sp, color = Color.White.copy(0.5f))
+                    Text(
+                        phase.displayName, fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                        color = MafiaPurple, maxLines = 1, overflow = TextOverflow.Ellipsis
+                    )
                 }
                 myRole?.let {
+                    Spacer(Modifier.width(8.dp))
                     Surface(color = if (it.isMafia()) MafiaRed.copy(0.3f) else TownGreen.copy(0.3f), shape = RoundedCornerShape(8.dp)) {
-                        Text("${it.emoji} ${it.displayName}", Modifier.padding(horizontal = 10.dp, vertical = 4.dp), fontSize = 12.sp, color = Color.White)
+                        Text("${it.emoji} ${it.displayName}", Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontSize = 11.sp, color = Color.White, maxLines = 1)
                     }
                 }
                 if (timerSeconds > 0) {
-                    Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(8.dp))
                     Surface(color = if (timerSeconds <= 10) MafiaRed.copy(0.8f) else Color.White.copy(0.15f), shape = CircleShape) {
-                        Text("${timerSeconds}s", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Text("${timerSeconds}s", Modifier.padding(horizontal = 10.dp, vertical = 5.dp), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 }
                 if (phase != GamePhase.GAME_OVER) {
-                    Spacer(Modifier.width(12.dp))
-                    TextButton(
-                        onClick = { showLeaveDialog = true },
-                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Surface(
+                        color = MafiaRed.copy(0.15f),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.clickable { showLeaveDialog = true }
                     ) {
-                        Text("🚪", fontSize = 18.sp)
+                        Text("Exit", Modifier.padding(horizontal = 10.dp, vertical = 5.dp), fontSize = 12.sp, color = MafiaRed.copy(0.85f), fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
@@ -257,9 +263,9 @@ private fun ArenaTab(
 ) {
     when (phase) {
         GamePhase.ROLE_REVEAL -> RoleRevealContent(myRole)
-        GamePhase.NIGHT -> NightContent(myRole, myPlayerId, alivePlayers, onNightAction, eventLog)
+        GamePhase.NIGHT -> NightContent(myRole, myPlayerId, alivePlayers, allPlayers, onNightAction, eventLog)
         GamePhase.NIGHT_RESULT -> NightResultContent(nightSummary, isSpectator, eventLog)
-        GamePhase.DISCUSSION -> DiscussionArenaContent(myRole, detectiveResult, alivePlayers, eventLog, onSendChat)
+        GamePhase.DISCUSSION -> DiscussionArenaContent(myRole, detectiveResult, alivePlayers, allPlayers, eventLog, onSendChat)
         GamePhase.VOTING -> VotingContent(myRole, myPlayerId, alivePlayers, voteTally, voteLog, ministerVetoUsed, eventLog, onVote, onSkipVote, onUseVeto)
         GamePhase.ELIMINATION -> EliminationContent(voteResult, voteLog, isSpectator, eventLog)
         GamePhase.GAME_OVER -> GameOverContent(lastEvent, allPlayers, onLeave)
@@ -295,11 +301,13 @@ private fun RoleRevealContent(myRole: Role?) {
 private fun NightContent(
     myRole: Role?, myPlayerId: String?,
     alivePlayers: List<PlayerPublicInfo>,
+    allPlayers: List<PlayerPublicInfo>,
     onNightAction: (String) -> Unit,
     eventLog: List<GameEvent>
 ) {
     var selected by remember { mutableStateOf<String?>(null) }
     val targets = alivePlayers.filter { it.id != myPlayerId }
+    val deadPlayers = allPlayers.filter { p -> alivePlayers.none { it.id == p.id } }
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         item {
             Text("🌙 The town sleeps...", fontSize = 18.sp, color = Color.White.copy(0.8f))
@@ -326,6 +334,22 @@ private fun NightContent(
                 Spacer(Modifier.height(12.dp))
                 Button(onClick = { selected?.let { onNightAction(it); selected = null } }, enabled = selected != null, colors = ButtonDefaults.buttonColors(containerColor = MafiaPurple), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().height(48.dp)) {
                     Text("Confirm", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+        if (deadPlayers.isNotEmpty()) {
+            item {
+                Spacer(Modifier.height(16.dp))
+                Text("Eliminated", fontSize = 12.sp, color = Color.White.copy(0.35f), fontWeight = FontWeight.SemiBold, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(6.dp))
+            }
+            items(deadPlayers) { p ->
+                Surface(Modifier.fillMaxWidth().padding(vertical = 3.dp), color = Color.White.copy(0.04f), shape = RoundedCornerShape(10.dp)) {
+                    Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("💀", fontSize = 16.sp); Spacer(Modifier.width(8.dp))
+                        Text(p.name, color = Color.White.copy(0.35f), fontSize = 14.sp, modifier = Modifier.weight(1f))
+                        Text("eliminated", fontSize = 11.sp, color = DeadGray.copy(0.5f))
+                    }
                 }
             }
         }
@@ -394,9 +418,13 @@ private fun DiscussionArenaContent(
     myRole: Role?,
     detectiveResult: ServerMessage.DetectiveResult?,
     alivePlayers: List<PlayerPublicInfo>,
+    allPlayers: List<PlayerPublicInfo>,
     eventLog: List<GameEvent>,
     onSendChat: (String) -> Unit
 ) {
+    val aliveIds = alivePlayers.map { it.id }.toSet()
+    // Use allPlayers if populated (game started), else fall back to alivePlayers
+    val displayPlayers = if (allPlayers.isNotEmpty()) allPlayers else alivePlayers
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), contentPadding = PaddingValues(vertical = 12.dp)) {
         // Detective result banner
         if (myRole == Role.DETECTIVE && detectiveResult != null) {
@@ -416,21 +444,22 @@ private fun DiscussionArenaContent(
                 Spacer(Modifier.height(12.dp))
             }
         }
-        // Alive players grid
+        // All players grid (alive + dead)
         item {
-            Text("Players (${alivePlayers.size} alive)", fontSize = 13.sp, color = Color.White.copy(0.5f), fontWeight = FontWeight.SemiBold)
+            Text("Players (${alivePlayers.size} alive · ${displayPlayers.size - alivePlayers.size} eliminated)", fontSize = 13.sp, color = Color.White.copy(0.5f), fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
-            alivePlayers.chunked(3).forEach { row ->
+            displayPlayers.chunked(3).forEach { row ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     row.forEach { p ->
-                        Surface(color = Color.White.copy(0.08f), shape = RoundedCornerShape(10.dp), modifier = Modifier.weight(1f)) {
+                        val isAlive = p.id in aliveIds
+                        Surface(color = if (isAlive) Color.White.copy(0.08f) else Color.White.copy(0.03f), shape = RoundedCornerShape(10.dp), modifier = Modifier.weight(1f)) {
                             Column(Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(p.avatarEmoji, fontSize = 24.sp)
-                                Text(p.name, fontSize = 12.sp, color = Color.White, maxLines = 1)
+                                Text(if (isAlive) p.avatarEmoji else "💀", fontSize = 22.sp)
+                                Text(p.name, fontSize = 12.sp, color = if (isAlive) Color.White else Color.White.copy(0.35f), maxLines = 1)
+                                if (!isAlive) Text("dead", fontSize = 10.sp, color = DeadGray.copy(0.5f))
                             }
                         }
                     }
-                    // fill empty cells
                     repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                 }
                 Spacer(Modifier.height(8.dp))

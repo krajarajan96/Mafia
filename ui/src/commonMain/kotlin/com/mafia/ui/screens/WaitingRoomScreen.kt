@@ -21,6 +21,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mafia.shared.model.GameMode
 import com.mafia.shared.model.GameSettings
 import com.mafia.shared.model.Room
 import com.mafia.ui.theme.*
@@ -80,7 +81,8 @@ fun WaitingRoomScreen(
                 //   Classic core: Mafia + Doctor + Townsfolk (townsfolk must outnumber mafia)
                 //   maxSpecials = playerCount - 2×mafiaCount - 1  (1 Doctor base + optional slots)
                 //   optionalSlots = maxSpecials - 1
-                val playerCount = room.playerCount
+                val isSinglePlayer = room.mode == GameMode.SINGLE_PLAYER
+                val playerCount = if (isSinglePlayer) settings.botCount + 1 else room.playerCount
                 val mafiaCount = when (playerCount) { in 5..6 -> 1; in 7..8 -> 2; else -> 3 }
                 val maxSpecials = playerCount - 2 * mafiaCount - 1
                 val optionalSlots = maxOf(0, maxSpecials - 1)   // subtract 1 for Doctor (base)
@@ -100,6 +102,34 @@ fun WaitingRoomScreen(
                         }
                         if (showConfig) {
                             Spacer(Modifier.height(12.dp))
+
+                            // Bot count stepper (single player only)
+                            if (isSinglePlayer) {
+                                Text("Players", fontSize = 12.sp, color = Color.White.copy(0.5f), fontWeight = FontWeight.SemiBold)
+                                Spacer(Modifier.height(8.dp))
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text("AI opponents", fontSize = 14.sp, color = Color.White)
+                                        Text("Total ${settings.botCount + 1} players (you + ${settings.botCount} AI)", fontSize = 12.sp, color = Color.White.copy(0.4f))
+                                    }
+                                    Surface(color = Color.White.copy(0.08f), shape = RoundedCornerShape(10.dp)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            TextButton(
+                                                onClick = { if (settings.botCount > 3) { settings = settings.copy(botCount = settings.botCount - 1); onUpdateSettings(settings) } },
+                                                enabled = settings.botCount > 3,
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                            ) { Text("−", fontSize = 18.sp, color = if (settings.botCount > 3) Color.White else Color.White.copy(0.3f)) }
+                                            Text("${settings.botCount}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MafiaPurple, modifier = Modifier.widthIn(min = 24.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                            TextButton(
+                                                onClick = { if (settings.botCount < 8) { settings = settings.copy(botCount = settings.botCount + 1); onUpdateSettings(settings) } },
+                                                enabled = settings.botCount < 8,
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                            ) { Text("+", fontSize = 18.sp, color = if (settings.botCount < 8) Color.White else Color.White.copy(0.3f)) }
+                                        }
+                                    }
+                                }
+                                Spacer(Modifier.height(12.dp))
+                            }
 
                             // Classic / Custom preset row
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
