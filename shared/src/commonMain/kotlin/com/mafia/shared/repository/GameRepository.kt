@@ -50,6 +50,9 @@ class GameRepository(
     val ministerVetoUsed: StateFlow<Boolean> = _ministerVetoUsed.asStateFlow()
     private val _revealedRoles = MutableStateFlow<Map<String, Role>>(emptyMap())
     val revealedRoles: StateFlow<Map<String, Role>> = _revealedRoles.asStateFlow()
+    /** All players who started the game — never cleared mid-game; used for name lookups after elimination. */
+    private val _allPlayers = MutableStateFlow<List<PlayerPublicInfo>>(emptyList())
+    val allPlayers: StateFlow<List<PlayerPublicInfo>> = _allPlayers.asStateFlow()
     val connectionState = socket.connectionState
 
     // ── Local single-player state ───────────────────────────────────────────
@@ -80,6 +83,8 @@ class GameRepository(
                 _phase.value = msg.phase; _round.value = msg.round
                 _alivePlayers.value = msg.alivePlayers; _timer.value = msg.durationSeconds
                 _voteTally.value = emptyMap()
+                // Snapshot all players at game start (everyone is alive at ROLE_REVEAL)
+                if (msg.phase == GamePhase.ROLE_REVEAL) _allPlayers.value = msg.alivePlayers
                 if (msg.phase == GamePhase.NIGHT) { _detectiveResult.value = null; _nightSummary.value = null }
                 if (msg.phase == GamePhase.VOTING) _voteLog.value = emptyList()
             }
@@ -107,8 +112,11 @@ class GameRepository(
                 _voteTally.value = msg.currentTally
                 val voterName = _alivePlayers.value.find { it.id == msg.voterId }?.name ?: msg.voterId
                 val isSkip = msg.targetId == SKIP_VOTE
-                val targetName = if (isSkip) "Skip" else (_alivePlayers.value.find { it.id == msg.targetId }?.name ?: msg.targetId)
+                val targetName = if (isSkip) "abstained" else (_alivePlayers.value.find { it.id == msg.targetId }?.name ?: msg.targetId)
                 _voteLog.value = _voteLog.value + VoteEntry(voterName, targetName, isSkip)
+                val round = _round.value
+                val voteDesc = if (isSkip) "$voterName abstained" else "$voterName → $targetName"
+                _eventLog.value = _eventLog.value + GameEvent(round, "Vote", voteDesc, false)
             }
             is ServerMessage.VoteResult -> {
                 // Track revealed roles of eliminated players
@@ -215,7 +223,7 @@ class GameRepository(
         _myRole.value = null; _phase.value = GamePhase.LOBBY; _chatMessages.value = emptyList()
         _detectiveResult.value = null; _voteTally.value = emptyMap()
         _nightSummary.value = null; _voteResult.value = null; _voteLog.value = emptyList()
-        _round.value = 0; _alivePlayers.value = emptyList()
+        _round.value = 0; _alivePlayers.value = emptyList(); _allPlayers.value = emptyList()
         _eventLog.value = emptyList(); _ministerVetoUsed.value = false; _revealedRoles.value = emptyMap()
     }
 
@@ -257,7 +265,9 @@ class GameRepository(
         localState = GameState(roomId = "local", players = allPlayers, round = 0)
         _myPlayerId.value = humanId
         _myRole.value = allPlayers.first { it.id == humanId }.role
-        _alivePlayers.value = allPlayers.map { PlayerPublicInfo.from(it) }
+        val publicPlayers = allPlayers.map { PlayerPublicInfo.from(it) }
+        _alivePlayers.value = publicPlayers
+        _allPlayers.value = publicPlayers
         _chatMessages.value = emptyList()
         _round.value = 0
         _voteTally.value = emptyMap()
@@ -356,14 +366,17 @@ class GameRepository(
                 try {
                     val target = voteDeferred.getCompleted()
                     val humanName = localState!!.getPlayer(humanId)?.name ?: "You"
+                    val voteRound = _round.value
                     if (target == SKIP_VOTE) {
                         localState = engine.submitSkip(localState!!, humanId)
                         _voteLog.value = _voteLog.value + VoteEntry(humanName, "Skip", true)
+                        _eventLog.value = _eventLog.value + GameEvent(voteRound, "Vote", "$humanName abstained", false)
                     } else {
                         localState = engine.submitVote(localState!!, humanId, target)
                         _voteTally.value = localState!!.votes.values.groupingBy { it }.eachCount()
                         val targetName = localState!!.getPlayer(target)?.name ?: target
                         _voteLog.value = _voteLog.value + VoteEntry(humanName, targetName, false)
+                        _eventLog.value = _eventLog.value + GameEvent(voteRound, "Vote", "$humanName → $targetName", false)
                     }
                 } catch (_: Exception) {}
             }
@@ -453,6 +466,8 @@ class GameRepository(
                 _voteTally.value = localState!!.votes.values.groupingBy { v -> v }.eachCount()
                 val targetName = localState!!.getPlayer(it)?.name ?: it
                 _voteLog.value = _voteLog.value + VoteEntry(bot.name, targetName, false)
+                val round = _round.value
+                _eventLog.value = _eventLog.value + GameEvent(round, "Vote", "${bot.name} → $targetName", false)
             }
         }
     }

@@ -40,6 +40,7 @@ fun GameScreen(
     eventLog: List<GameEvent>,
     ministerVetoUsed: Boolean,
     revealedRoles: Map<String, Role>,
+    allPlayers: List<PlayerPublicInfo>,
     lastEvent: ServerMessage?,
     onNightAction: (String) -> Unit, onSendChat: (String) -> Unit,
     onVote: (String) -> Unit, onSkipVote: () -> Unit,
@@ -54,8 +55,35 @@ fun GameScreen(
 
     Column(Modifier.fillMaxSize().background(bgGradient)) {
         // Phase Header (always visible)
+        var showLeaveDialog by remember { mutableStateOf(false) }
+        if (showLeaveDialog) {
+            AlertDialog(
+                onDismissRequest = { showLeaveDialog = false },
+                title = { Text("Leave Game?", color = Color.White) },
+                text = { Text("You will forfeit the game. Are you sure?", color = Color.White.copy(0.7f)) },
+                confirmButton = {
+                    TextButton(onClick = { showLeaveDialog = false; onLeave() }) {
+                        Text("Leave", color = MafiaRed)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showLeaveDialog = false }) {
+                        Text("Stay", color = MafiaPurple)
+                    }
+                },
+                containerColor = Color(0xFF1A1145)
+            )
+        }
         Surface(color = Color.Black.copy(0.4f), modifier = Modifier.fillMaxWidth()) {
             Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (phase != GamePhase.GAME_OVER) {
+                    TextButton(
+                        onClick = { showLeaveDialog = true },
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                    ) {
+                        Text("✕", fontSize = 16.sp, color = Color.White.copy(0.4f))
+                    }
+                }
                 Column(Modifier.weight(1f)) {
                     if (round > 0) Text("Round $round", fontSize = 12.sp, color = Color.White.copy(0.5f))
                     Text(phase.displayName, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MafiaPurple)
@@ -81,7 +109,7 @@ fun GameScreen(
                 GameTab.ARENA -> ArenaTab(
                     phase, round, myRole, myPlayerId, alivePlayers, timerSeconds,
                     voteTally, detectiveResult, nightSummary, voteResult, voteLog,
-                    eventLog, ministerVetoUsed, lastEvent,
+                    eventLog, ministerVetoUsed, allPlayers, lastEvent,
                     onNightAction, onSendChat, onVote, onSkipVote, onUseVeto, onLeave
                 )
                 GameTab.CHAT -> ChatTab(chatMessages, myPlayerId, onSendChat)
@@ -92,7 +120,7 @@ fun GameScreen(
         val isEliminated = myPlayerId != null && phase != GamePhase.GAME_OVER &&
             phase != GamePhase.ROLE_REVEAL && alivePlayers.none { it.id == myPlayerId }
         if (isEliminated) {
-            SpectatorBanner(myRole, revealedRoles, alivePlayers)
+            SpectatorBanner(myRole, revealedRoles, allPlayers)
         }
 
         // Bottom Tab Bar
@@ -218,6 +246,7 @@ private fun ArenaTab(
     voteLog: List<VoteEntry>,
     eventLog: List<GameEvent>,
     ministerVetoUsed: Boolean,
+    allPlayers: List<PlayerPublicInfo>,
     lastEvent: ServerMessage?,
     onNightAction: (String) -> Unit,
     onSendChat: (String) -> Unit,
@@ -231,7 +260,7 @@ private fun ArenaTab(
         GamePhase.DISCUSSION -> DiscussionArenaContent(myRole, detectiveResult, alivePlayers, eventLog, onSendChat)
         GamePhase.VOTING -> VotingContent(myRole, myPlayerId, alivePlayers, voteTally, voteLog, ministerVetoUsed, eventLog, onVote, onSkipVote, onUseVeto)
         GamePhase.ELIMINATION -> EliminationContent(voteResult, voteLog, eventLog)
-        GamePhase.GAME_OVER -> GameOverContent(lastEvent, onLeave)
+        GamePhase.GAME_OVER -> GameOverContent(lastEvent, allPlayers, onLeave)
         else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(phase.description, color = Color.White.copy(0.6f), textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp))
@@ -535,7 +564,7 @@ private fun EliminationContent(voteResult: ServerMessage.VoteResult?, voteLog: L
 }
 
 @Composable
-private fun GameOverContent(lastEvent: ServerMessage?, onLeave: () -> Unit) {
+private fun GameOverContent(lastEvent: ServerMessage?, allPlayers: List<PlayerPublicInfo>, onLeave: () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val event = lastEvent as? ServerMessage.GameOver
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
@@ -543,15 +572,23 @@ private fun GameOverContent(lastEvent: ServerMessage?, onLeave: () -> Unit) {
             Text(if (isTownWin) "🎉" else "🔪", fontSize = 72.sp)
             Spacer(Modifier.height(16.dp))
             Text(if (isTownWin) "Town Wins!" else "Mafia Wins!", fontSize = 32.sp, fontWeight = FontWeight.Black, color = if (isTownWin) TownGreen else MafiaRed)
-            // Show all roles
+            // Show all roles with player names
             event?.allRoles?.let { allRoles ->
                 Spacer(Modifier.height(24.dp))
                 Surface(color = Color.White.copy(0.08f), shape = RoundedCornerShape(12.dp)) {
                     Column(Modifier.padding(12.dp)) {
                         Text("Final Roles", fontSize = 13.sp, color = Color.White.copy(0.5f), fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.height(6.dp))
-                        allRoles.entries.forEach { (_, role) ->
-                            Text("${role.emoji} ${role.displayName}", fontSize = 13.sp, color = if (role.isMafia()) MafiaRed.copy(0.9f) else TownGreen.copy(0.9f))
+                        allRoles.entries.forEach { (playerId, role) ->
+                            val player = allPlayers.find { it.id == playerId }
+                            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(player?.avatarEmoji ?: "👤", fontSize = 18.sp)
+                                Spacer(Modifier.width(8.dp))
+                                Text(player?.name ?: playerId, fontSize = 14.sp, color = Color.White, modifier = Modifier.weight(1f))
+                                Surface(color = if (role.isMafia()) MafiaRed.copy(0.25f) else TownGreen.copy(0.2f), shape = RoundedCornerShape(6.dp)) {
+                                    Text("${role.emoji} ${role.displayName}", Modifier.padding(horizontal = 8.dp, vertical = 3.dp), fontSize = 12.sp, color = if (role.isMafia()) MafiaRed else TownGreen)
+                                }
+                            }
                         }
                     }
                 }

@@ -20,7 +20,7 @@ data class Room(
 
 @Serializable
 data class GameSettings(
-    val discussionTimeSec: Int = 90, val votingTimeSec: Int = 30,
+    val discussionTimeSec: Int = 60, val votingTimeSec: Int = 30,
     val nightTimeSec: Int = 30, val allowAIFill: Boolean = true,
     val revealRoleOnDeath: Boolean = false, val anonymousVoting: Boolean = false,
     // Doctor is always on (base/classic role).

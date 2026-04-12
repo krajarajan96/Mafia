@@ -8,7 +8,7 @@ enum class GamePhase(val displayName: String, val defaultDurationSeconds: Int, v
     ROLE_REVEAL("Role Reveal", 8, "Discover your secret identity"),
     NIGHT("Night", 30, "The town sleeps... Mafia, choose your target"),
     NIGHT_RESULT("Dawn", 6, "The sun rises and the town discovers what happened"),
-    DISCUSSION("Discussion", 90, "Discuss, accuse, and defend — find the Mafia!"),
+    DISCUSSION("Discussion", 60, "Discuss, accuse, and defend — find the Mafia!"),
     VOTING("Voting", 30, "Vote to eliminate a suspect"),
     ELIMINATION("Elimination", 6, "The town has decided..."),
     GAME_OVER("Game Over", 0, "The game has ended");
