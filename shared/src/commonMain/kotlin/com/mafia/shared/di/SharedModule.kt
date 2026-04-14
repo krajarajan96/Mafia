@@ -12,7 +12,7 @@ import org.koin.dsl.module
  *   e.g. "wss://mafia-server-production.up.railway.app"
  * Use "wss://" for Railway (HTTPS/WSS) and "ws://" only for local development.
  */
-const val SERVER_BASE_URL = "wss://mafia-server-production.up.railway.app"
+const val SERVER_BASE_URL = "wss://mafia-production-a2e1.up.railway.app"
 
 fun sharedModule(serverBaseUrl: String = SERVER_BASE_URL) = module {
     single { HttpClient { install(WebSockets) } }
