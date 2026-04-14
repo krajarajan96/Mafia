@@ -6,7 +6,12 @@ plugins {
 }
 
 kotlin {
-    jvm { withJava() }
+    jvm {
+        withJava()
+        mainRun {
+            mainClass.set("com.mafia.server.ApplicationKt")
+        }
+    }
 
     sourceSets {
         jvmMain.dependencies {
@@ -32,13 +37,25 @@ kotlin {
     }
 }
 
-application { mainClass.set("com.mafia.server.ApplicationKt") }
+application {
+    mainClass.set("com.mafia.server.ApplicationKt")
+}
 
 tasks.shadowJar {
     archiveFileName.set("mafia-server.jar")
-    manifest { attributes["Main-Class"] = "com.mafia.server.ApplicationKt" }
+    archiveClassifier.set("")
+
+    manifest {
+        attributes["Main-Class"] = "com.mafia.server.ApplicationKt"
+    }
+
     mergeServiceFiles()
-    // KMP compiles to jvmRuntimeClasspath, not the default runtimeClasspath
-    configurations = listOf(project.configurations["jvmRuntimeClasspath"])
-    from(kotlin.jvm().compilations["main"].output.allOutputs)
+
+    // This is the key fix — get the JVM compilation output + its runtime classpath
+    val jvmMain = kotlin.jvm().compilations["main"]
+    from(jvmMain.output.allOutputs)
+    configurations = listOf(jvmMain.runtimeDependencyFiles as Configuration)
+
+    // Ensure shadowJar runs after compilation
+    dependsOn(tasks.named("jvmJar"))
 }
