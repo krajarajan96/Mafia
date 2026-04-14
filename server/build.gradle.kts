@@ -6,12 +6,7 @@ plugins {
 }
 
 kotlin {
-    jvm {
-        withJava()
-        mainRun {
-            mainClass.set("com.mafia.server.ApplicationKt")
-        }
-    }
+    jvm()
 
     sourceSets {
         jvmMain.dependencies {
@@ -44,18 +39,14 @@ application {
 tasks.shadowJar {
     archiveFileName.set("mafia-server.jar")
     archiveClassifier.set("")
-
     manifest {
         attributes["Main-Class"] = "com.mafia.server.ApplicationKt"
     }
-
     mergeServiceFiles()
+    from(kotlin.jvm().compilations["main"].output.allOutputs)
+    configurations = listOf(project.configurations.getByName("jvmRuntimeClasspath"))
+}
 
-    // This is the key fix — get the JVM compilation output + its runtime classpath
-    val jvmMain = kotlin.jvm().compilations["main"]
-    from(jvmMain.output.allOutputs)
-    configurations = listOf(jvmMain.runtimeDependencyFiles as Configuration)
-
-    // Ensure shadowJar runs after compilation
-    dependsOn(tasks.named("jvmJar"))
+tasks.named("build") {
+    dependsOn(tasks.shadowJar)
 }
