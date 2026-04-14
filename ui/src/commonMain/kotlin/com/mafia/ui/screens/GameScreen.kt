@@ -155,24 +155,28 @@ fun GameScreen(
 private fun SpectatorBanner(
     myRole: Role?,
     revealedRoles: Map<String, Role>,
-    alivePlayers: List<PlayerPublicInfo>
+    allPlayers: List<PlayerPublicInfo>
 ) {
-    Surface(color = Color.Black.copy(0.6f), modifier = Modifier.fillMaxWidth()) {
+    Surface(color = Color.Black.copy(0.7f), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("💀", fontSize = 16.sp)
+                Text("💀", fontSize = 15.sp)
                 Spacer(Modifier.width(6.dp))
-                Text("You are eliminated — Spectating", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = DeadGray)
+                Text("Eliminated — Spectating", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = DeadGray)
             }
             if (revealedRoles.isNotEmpty()) {
                 Spacer(Modifier.height(6.dp))
-                Text("Known roles:", fontSize = 11.sp, color = Color.White.copy(0.4f))
+                Text("Roles revealed:", fontSize = 10.sp, color = Color.White.copy(0.35f))
                 Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    revealedRoles.entries.forEach { (playerId, role) ->
-                        val name = alivePlayers.find { it.id == playerId }?.name ?: "?"
-                        Surface(color = if (role.isMafia()) MafiaRed.copy(0.25f) else TownGreen.copy(0.2f), shape = RoundedCornerShape(6.dp)) {
-                            Text("${role.emoji} $name", Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, color = Color.White.copy(0.85f))
+                // Chips in rows of 3 — sorted mafia first
+                val sorted = revealedRoles.entries.sortedByDescending { it.value.isMafia() }
+                sorted.chunked(3).forEach { rowEntries ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.padding(bottom = 4.dp)) {
+                        rowEntries.forEach { (playerId, role) ->
+                            val name = allPlayers.find { it.id == playerId }?.name ?: "?"
+                            Surface(color = if (role.isMafia()) MafiaRed.copy(0.3f) else TownGreen.copy(0.2f), shape = RoundedCornerShape(6.dp)) {
+                                Text("${role.emoji} $name", Modifier.padding(horizontal = 7.dp, vertical = 3.dp), fontSize = 11.sp, color = Color.White.copy(0.9f), maxLines = 1)
+                            }
                         }
                     }
                 }
@@ -263,7 +267,7 @@ private fun ArenaTab(
 ) {
     when (phase) {
         GamePhase.ROLE_REVEAL -> RoleRevealContent(myRole)
-        GamePhase.NIGHT -> NightContent(myRole, myPlayerId, alivePlayers, allPlayers, onNightAction, eventLog)
+        GamePhase.NIGHT -> NightContent(myRole, myPlayerId, alivePlayers, allPlayers, isSpectator, onNightAction, eventLog)
         GamePhase.NIGHT_RESULT -> NightResultContent(nightSummary, isSpectator, eventLog)
         GamePhase.DISCUSSION -> DiscussionArenaContent(myRole, detectiveResult, alivePlayers, allPlayers, eventLog, onSendChat)
         GamePhase.VOTING -> VotingContent(myRole, myPlayerId, alivePlayers, voteTally, voteLog, ministerVetoUsed, eventLog, onVote, onSkipVote, onUseVeto)
@@ -302,6 +306,7 @@ private fun NightContent(
     myRole: Role?, myPlayerId: String?,
     alivePlayers: List<PlayerPublicInfo>,
     allPlayers: List<PlayerPublicInfo>,
+    isSpectator: Boolean,
     onNightAction: (String) -> Unit,
     eventLog: List<GameEvent>
 ) {
@@ -311,17 +316,19 @@ private fun NightContent(
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         item {
             Text("🌙 The town sleeps...", fontSize = 18.sp, color = Color.White.copy(0.8f))
-            val instr = when (myRole) {
-                Role.MAFIA -> "Choose a player to eliminate"
-                Role.DETECTIVE -> "Choose a player to investigate"
-                Role.DOCTOR -> "Choose a player to protect"
-                Role.VIGILANTE -> "Choose a player to shoot (careful — you die if they're innocent)"
-                Role.ESCORT -> "Choose a player to block tonight"
+            Spacer(Modifier.height(4.dp))
+            val instr = when {
+                isSpectator -> "You are eliminated — watching the night unfold"
+                myRole == Role.MAFIA -> "Choose a player to eliminate"
+                myRole == Role.DETECTIVE -> "Choose a player to investigate"
+                myRole == Role.DOCTOR -> "Choose a player to protect"
+                myRole == Role.VIGILANTE -> "Choose a player to shoot (careful — you die if they're innocent)"
+                myRole == Role.ESCORT -> "Choose a player to block tonight"
                 else -> "Wait for dawn..."
             }
-            Text(instr, fontSize = 14.sp, color = MafiaPurple.copy(0.8f), textAlign = TextAlign.Center)
+            Text(instr, fontSize = 14.sp, color = if (isSpectator) DeadGray else MafiaPurple.copy(0.8f), textAlign = TextAlign.Center)
         }
-        if (myRole?.hasNightAction == true) {
+        if (!isSpectator && myRole?.hasNightAction == true) {
             item { Spacer(Modifier.height(12.dp)) }
             items(targets) { p ->
                 Surface(Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { selected = p.id }, color = if (selected == p.id) MafiaPurple.copy(0.4f) else Color.White.copy(0.08f), shape = RoundedCornerShape(12.dp)) {
@@ -449,14 +456,26 @@ private fun DiscussionArenaContent(
             Text("Players (${alivePlayers.size} alive · ${displayPlayers.size - alivePlayers.size} eliminated)", fontSize = 13.sp, color = Color.White.copy(0.5f), fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
             displayPlayers.chunked(3).forEach { row ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     row.forEach { p ->
                         val isAlive = p.id in aliveIds
-                        Surface(color = if (isAlive) Color.White.copy(0.08f) else Color.White.copy(0.03f), shape = RoundedCornerShape(10.dp), modifier = Modifier.weight(1f)) {
-                            Column(Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Surface(
+                            color = if (isAlive) Color.White.copy(0.08f) else Color.White.copy(0.03f),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f).fillMaxHeight()
+                        ) {
+                            Column(
+                                Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
                                 Text(if (isAlive) p.avatarEmoji else "💀", fontSize = 22.sp)
-                                Text(p.name, fontSize = 12.sp, color = if (isAlive) Color.White else Color.White.copy(0.35f), maxLines = 1)
-                                if (!isAlive) Text("dead", fontSize = 10.sp, color = DeadGray.copy(0.5f))
+                                Spacer(Modifier.height(4.dp))
+                                Text(p.name, fontSize = 11.sp, color = if (isAlive) Color.White else Color.White.copy(0.35f), maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                                if (!isAlive) Text("eliminated", fontSize = 9.sp, color = DeadGray.copy(0.5f))
                             }
                         }
                     }
@@ -614,14 +633,16 @@ private fun GameOverContent(lastEvent: ServerMessage?, allPlayers: List<PlayerPu
                     Column(Modifier.padding(12.dp)) {
                         Text("Final Roles", fontSize = 13.sp, color = Color.White.copy(0.5f), fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.height(6.dp))
-                        allRoles.entries.forEach { (playerId, role) ->
+                        // Sort: Mafia first, then Town
+                        val sorted = allRoles.entries.sortedWith(compareByDescending<Map.Entry<String, Role>> { it.value.isMafia() }.thenBy { it.value.displayName })
+                        sorted.forEach { (playerId, role) ->
                             val player = allPlayers.find { it.id == playerId }
-                            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(player?.avatarEmoji ?: "👤", fontSize = 18.sp)
-                                Spacer(Modifier.width(8.dp))
-                                Text(player?.name ?: playerId, fontSize = 14.sp, color = Color.White, modifier = Modifier.weight(1f))
+                            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(player?.avatarEmoji ?: "👤", fontSize = 20.sp)
+                                Spacer(Modifier.width(10.dp))
+                                Text(player?.name ?: playerId, fontSize = 14.sp, color = Color.White, modifier = Modifier.weight(1f), maxLines = 1)
                                 Surface(color = if (role.isMafia()) MafiaRed.copy(0.25f) else TownGreen.copy(0.2f), shape = RoundedCornerShape(6.dp)) {
-                                    Text("${role.emoji} ${role.displayName}", Modifier.padding(horizontal = 8.dp, vertical = 3.dp), fontSize = 12.sp, color = if (role.isMafia()) MafiaRed else TownGreen)
+                                    Text("${role.emoji} ${role.displayName}", Modifier.padding(horizontal = 8.dp, vertical = 3.dp), fontSize = 12.sp, color = if (role.isMafia()) MafiaRed else TownGreen, maxLines = 1)
                                 }
                             }
                         }

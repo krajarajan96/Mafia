@@ -53,7 +53,7 @@ fun Routing.configureGameWebSocket(manager: GameSessionManager) {
                             if (session != null && playerId == session.room.hostId) session.updateSettings(msg.settings)
                         }
                         is ClientMessage.Accuse -> currentRoomId?.let { manager.findByRoomId(it) }?.let { s -> playerId?.let { s.handleChat(it, "I accuse ${msg.targetId}: ${msg.reason}") } }
-                        is ClientMessage.LeaveRoom -> { handleDisconnect(manager, playerId, currentRoomId); playerId = null; currentRoomId = null }
+                        is ClientMessage.LeaveRoom -> { handleDisconnect(manager, playerId, currentRoomId); playerId = null; currentRoomId = null; continue }
                         is ClientMessage.Ready -> {}
                     }
                 } catch (e: Exception) { send(Frame.Text(ServerMessage.encode(ServerMessage.Error("Invalid message: ${e.message}")))) }
@@ -62,6 +62,6 @@ fun Routing.configureGameWebSocket(manager: GameSessionManager) {
     }
 }
 
-private fun handleDisconnect(manager: GameSessionManager, playerId: String?, roomId: String?) {
+private suspend fun handleDisconnect(manager: GameSessionManager, playerId: String?, roomId: String?) {
     playerId?.let { pid -> manager.unregisterPlayer(pid); roomId?.let { manager.findByRoomId(it)?.removePlayer(pid) } }
 }

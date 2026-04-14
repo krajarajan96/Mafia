@@ -32,13 +32,27 @@ fun LobbyScreen(isMultiplayer: Boolean, onCreateRoom: (String, String, GameMode)
             modifier = Modifier.verticalScroll(rememberScrollState()).padding(24.dp)) {
             Text(if (isMultiplayer) "👥 Multiplayer" else "🕵️ Single Player", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = Color.White)
             Text("Choose your avatar", color = Color.White.copy(0.7f), fontSize = 14.sp)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 emojis.chunked(4).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        row.forEach { emoji ->
-                            FilledTonalButton(onClick = { selectedEmoji = emoji }, modifier = Modifier.size(56.dp), shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.filledTonalButtonColors(containerColor = if (emoji == selectedEmoji) MafiaPurple else Color.White.copy(0.1f)),
-                                contentPadding = PaddingValues(0.dp)) { Text(emoji, fontSize = 24.sp) }
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        row.forEachIndexed { idx, emoji ->
+                            if (idx > 0) Spacer(Modifier.width(8.dp))
+                            FilledTonalButton(
+                                onClick = { selectedEmoji = emoji },
+                                modifier = Modifier.size(60.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = if (emoji == selectedEmoji) MafiaPurple else Color.White.copy(0.1f)
+                                ),
+                                contentPadding = PaddingValues(0.dp)
+                            ) { Text(emoji, fontSize = 26.sp) }
                         }
                     }
                 }

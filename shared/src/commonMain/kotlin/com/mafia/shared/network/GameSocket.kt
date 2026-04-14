@@ -24,41 +24,40 @@ class GameSocket(
 
     enum class ConnectionState { DISCONNECTED, CONNECTING, CONNECTED, RECONNECTING }
 
-    suspend fun connect() {
+    private suspend fun connectOnce() {
         _connectionState.value = ConnectionState.CONNECTING
-        try {
-            session = client.webSocketSession("$baseUrl/game")
-            _connectionState.value = ConnectionState.CONNECTED
-            scope.launch { for (msg in outgoing) { session?.send(Frame.Text(ClientMessage.encode(msg))) } }
-            session?.let { ws ->
-                for (frame in ws.incoming) {
-                    if (frame is Frame.Text) {
-                        try { _incoming.emit(ServerMessage.decode(frame.readText())) } catch (_: Exception) {}
-                    }
+        session = client.webSocketSession("$baseUrl/game")
+        _connectionState.value = ConnectionState.CONNECTED
+        scope.launch { for (msg in outgoing) { session?.send(Frame.Text(ClientMessage.encode(msg))) } }
+        session?.let { ws ->
+            for (frame in ws.incoming) {
+                if (frame is Frame.Text) {
+                    try { _incoming.emit(ServerMessage.decode(frame.readText())) } catch (_: Exception) {}
                 }
             }
+        }
+    }
+
+    fun connect() {
+        reconnectJob?.cancel()
+        reconnectJob = scope.launch {
+            var attempt = 0
+            while (true) {
+                try {
+                    connectOnce()
+                    // connectOnce returned normally — connection closed
+                } catch (_: Exception) {}
+                _connectionState.value = ConnectionState.DISCONNECTED
+                if (attempt >= 5) break
+                _connectionState.value = ConnectionState.RECONNECTING
+                delay((1000L * (attempt + 1)).coerceAtMost(5000L))
+                attempt++
+            }
             _connectionState.value = ConnectionState.DISCONNECTED
-            attemptReconnect()
-        } catch (_: Exception) {
-            _connectionState.value = ConnectionState.DISCONNECTED
-            attemptReconnect()
         }
     }
 
     fun send(message: ClientMessage) { scope.launch { outgoing.send(message) } }
-
-    private fun attemptReconnect() {
-        reconnectJob?.cancel()
-        reconnectJob = scope.launch {
-            _connectionState.value = ConnectionState.RECONNECTING
-            var attempt = 0
-            while (attempt < 5) {
-                delay((1000L * (attempt + 1)).coerceAtMost(5000L)); attempt++
-                try { connect(); return@launch } catch (_: Exception) {}
-            }
-            _connectionState.value = ConnectionState.DISCONNECTED
-        }
-    }
 
     suspend fun disconnect() {
         reconnectJob?.cancel()

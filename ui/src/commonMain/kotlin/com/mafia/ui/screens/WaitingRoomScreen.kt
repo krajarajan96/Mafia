@@ -39,25 +39,30 @@ fun WaitingRoomScreen(
     var showConfig by remember { mutableStateOf(false) }
     var settings by remember(room.settings) { mutableStateOf(room.settings) }
 
+    val isSinglePlayer = room.mode == GameMode.SINGLE_PLAYER
+
     Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF0F0A1E), Color(0xFF1A1145)))).padding(24.dp)) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("Waiting Room", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Text(if (isSinglePlayer) "Game Setup" else "Waiting Room", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
             Spacer(Modifier.height(16.dp))
 
-            // Room code card
-            Surface(color = Color.White.copy(0.08f), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Room Code", fontSize = 12.sp, color = Color.White.copy(0.5f))
-                    Spacer(Modifier.height(4.dp))
-                    Text(room.code, fontSize = 36.sp, fontWeight = FontWeight.Black, color = MafiaGold, letterSpacing = 6.sp, fontFamily = FontFamily.Monospace)
-                    Spacer(Modifier.height(8.dp))
-                    TextButton(onClick = { clipboardManager.setText(AnnotatedString(room.code)) }) { Text("📋 Copy Code", color = MafiaGold.copy(0.8f), fontSize = 13.sp) }
+            // Room code card — multiplayer only
+            if (!isSinglePlayer) {
+                Surface(color = Color.White.copy(0.08f), shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Room Code", fontSize = 12.sp, color = Color.White.copy(0.5f))
+                        Spacer(Modifier.height(4.dp))
+                        Text(room.code, fontSize = 36.sp, fontWeight = FontWeight.Black, color = MafiaGold, letterSpacing = 6.sp, fontFamily = FontFamily.Monospace)
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = { clipboardManager.setText(AnnotatedString(room.code)) }) { Text("📋 Copy Code", color = MafiaGold.copy(0.8f), fontSize = 13.sp) }
+                    }
                 }
+                Spacer(Modifier.height(24.dp))
             }
-            Spacer(Modifier.height(24.dp))
 
-            // Players
-            Text("${room.playerCount}/${room.maxPlayers} Players", fontSize = 14.sp, color = Color.White.copy(0.6f))
+            // Players header
+            val playerLabel = if (isSinglePlayer) "You + AI Opponents" else "${room.playerCount}/${room.maxPlayers} Players"
+            Text(playerLabel, fontSize = 14.sp, color = Color.White.copy(0.6f))
             Spacer(Modifier.height(12.dp))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 room.players.forEach { player ->
@@ -81,7 +86,6 @@ fun WaitingRoomScreen(
                 //   Classic core: Mafia + Doctor + Townsfolk (townsfolk must outnumber mafia)
                 //   maxSpecials = playerCount - 2×mafiaCount - 1  (1 Doctor base + optional slots)
                 //   optionalSlots = maxSpecials - 1
-                val isSinglePlayer = room.mode == GameMode.SINGLE_PLAYER
                 val playerCount = if (isSinglePlayer) settings.botCount + 1 else room.playerCount
                 val mafiaCount = when (playerCount) { in 5..6 -> 1; in 7..8 -> 2; else -> 3 }
                 val maxSpecials = playerCount - 2 * mafiaCount - 1
@@ -110,21 +114,21 @@ fun WaitingRoomScreen(
                                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
                                         Text("AI opponents", fontSize = 14.sp, color = Color.White)
-                                        Text("Total ${settings.botCount + 1} players (you + ${settings.botCount} AI)", fontSize = 12.sp, color = Color.White.copy(0.4f))
+                                        Text("${settings.botCount + 1} players total  ·  4–9 AI opponents", fontSize = 12.sp, color = Color.White.copy(0.4f))
                                     }
                                     Surface(color = Color.White.copy(0.08f), shape = RoundedCornerShape(10.dp)) {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             TextButton(
-                                                onClick = { if (settings.botCount > 3) { settings = settings.copy(botCount = settings.botCount - 1); onUpdateSettings(settings) } },
-                                                enabled = settings.botCount > 3,
+                                                onClick = { if (settings.botCount > 4) { settings = settings.copy(botCount = settings.botCount - 1); onUpdateSettings(settings) } },
+                                                enabled = settings.botCount > 4,
                                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                            ) { Text("−", fontSize = 18.sp, color = if (settings.botCount > 3) Color.White else Color.White.copy(0.3f)) }
-                                            Text("${settings.botCount}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MafiaPurple, modifier = Modifier.widthIn(min = 24.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+                                            ) { Text("−", fontSize = 18.sp, color = if (settings.botCount > 4) Color.White else Color.White.copy(0.3f)) }
+                                            Text("${settings.botCount}", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MafiaPurple, modifier = Modifier.width(28.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                                             TextButton(
-                                                onClick = { if (settings.botCount < 8) { settings = settings.copy(botCount = settings.botCount + 1); onUpdateSettings(settings) } },
-                                                enabled = settings.botCount < 8,
+                                                onClick = { if (settings.botCount < 9) { settings = settings.copy(botCount = settings.botCount + 1); onUpdateSettings(settings) } },
+                                                enabled = settings.botCount < 9,
                                                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                            ) { Text("+", fontSize = 18.sp, color = if (settings.botCount < 8) Color.White else Color.White.copy(0.3f)) }
+                                            ) { Text("+", fontSize = 18.sp, color = if (settings.botCount < 9) Color.White else Color.White.copy(0.3f)) }
                                         }
                                     }
                                 }
@@ -217,7 +221,7 @@ fun WaitingRoomScreen(
                 Text("Waiting for host to start...", color = Color.White.copy(0.5f), fontSize = 14.sp)
             }
             Spacer(Modifier.height(12.dp))
-            TextButton(onClick = onLeave) { Text("← Leave Room", color = MafiaRed.copy(0.7f)) }
+            TextButton(onClick = onLeave) { Text(if (isSinglePlayer) "← Back" else "← Leave Room", color = MafiaRed.copy(0.7f)) }
         }
     }
 }
@@ -231,21 +235,28 @@ private fun RoleToggleRow(
     onToggle: (Boolean) -> Unit
 ) {
     val isInteractive = enabled && !required
-    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f).padding(end = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(name, fontSize = 14.sp, color = if (isInteractive || checked) Color.White else Color.White.copy(0.4f))
+                Text(
+                    name, fontSize = 14.sp,
+                    color = if (isInteractive || checked) Color.White else Color.White.copy(0.4f),
+                    maxLines = 1
+                )
                 Spacer(Modifier.width(6.dp))
                 when {
                     required -> Surface(color = Color.White.copy(0.1f), shape = RoundedCornerShape(4.dp)) {
                         Text("Required", Modifier.padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 10.sp, color = Color.White.copy(0.4f))
                     }
                     lockedReason != null -> Surface(color = MafiaRed.copy(0.15f), shape = RoundedCornerShape(4.dp)) {
-                        Text(lockedReason, Modifier.padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 10.sp, color = MafiaRed.copy(0.8f))
+                        Text("Need more players", Modifier.padding(horizontal = 6.dp, vertical = 1.dp), fontSize = 10.sp, color = MafiaRed.copy(0.8f), maxLines = 1)
                     }
                 }
             }
-            Text(description, fontSize = 12.sp, color = Color.White.copy(0.4f))
+            Text(description, fontSize = 12.sp, color = Color.White.copy(0.4f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
         Switch(
             checked = checked,

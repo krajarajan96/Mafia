@@ -5,6 +5,8 @@ import com.mafia.shared.model.*
 import com.mafia.shared.network.messages.ServerMessage
 import io.ktor.websocket.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 
 class GameSession(
@@ -17,6 +19,8 @@ class GameSession(
     var state = GameState(roomId = roomId); private set
     var room = Room(id = roomId, code = roomCode, hostId = "", mode = mode); private set
     private var phaseTimerJob: Job? = null
+    private val resolveMutex = Mutex()
+    private var gameStarted = false
 
     fun addPlayer(player: Player, session: WebSocketSession): Boolean {
         if (room.isFull || state.phase != GamePhase.LOBBY) return false
@@ -26,15 +30,18 @@ class GameSession(
         return true
     }
 
-    fun removePlayer(playerId: String) {
+    suspend fun removePlayer(playerId: String) {
         connections.remove(playerId)
         state = state.copy(players = state.players.filter { it.id != playerId })
         room = room.copy(players = state.players.map { PlayerPublicInfo.from(it) })
+        broadcastAll(ServerMessage.PlayerLeft(playerId))
     }
 
     fun getConnection(playerId: String): WebSocketSession? = connections[playerId]
 
     suspend fun startGame() {
+        if (gameStarted) return
+        gameStarted = true
         if (room.settings.allowAIFill && state.players.size < room.minPlayers) {
             val needed = room.minPlayers - state.players.size
             state = state.copy(players = state.players + AI_PERSONALITIES.shuffled().take(needed))
@@ -94,11 +101,20 @@ class GameSession(
                 sendTo(playerId, ServerMessage.DetectiveResult(targetId, it.name, it.role?.isMafia() == true))
             }
         }
-        if (engine.allNightActionsSubmitted(state)) { phaseTimerJob?.cancel(); resolveNight() }
+        if (engine.allNightActionsSubmitted(state)) {
+            resolveMutex.withLock {
+                if (state.phase == GamePhase.NIGHT) { phaseTimerJob?.cancel(); resolveNight() }
+            }
+        }
     }
 
     suspend fun submitMinisterVeto(playerId: String) {
         state = engine.submitMinisterVeto(state, playerId)
+        if (engine.allVotedOrSkipped(state)) {
+            resolveMutex.withLock {
+                if (state.phase == GamePhase.VOTING) { phaseTimerJob?.cancel(); resolveVoting() }
+            }
+        }
     }
 
     fun updateSettings(settings: GameSettings) {
@@ -126,14 +142,22 @@ class GameSession(
         state = engine.submitVote(state, voterId, targetId)
         val tally = state.votes.values.groupingBy { it }.eachCount()
         broadcastAll(ServerMessage.VoteUpdate(voterId, targetId, tally, state.skips))
-        if (engine.allVotedOrSkipped(state)) { phaseTimerJob?.cancel(); resolveVoting() }
+        if (engine.allVotedOrSkipped(state)) {
+            resolveMutex.withLock {
+                if (state.phase == GamePhase.VOTING) { phaseTimerJob?.cancel(); resolveVoting() }
+            }
+        }
     }
 
     suspend fun submitSkip(voterId: String) {
         state = engine.submitSkip(state, voterId)
         val tally = state.votes.values.groupingBy { it }.eachCount()
         broadcastAll(ServerMessage.VoteUpdate(voterId, "SKIP", tally, state.skips))
-        if (engine.allVotedOrSkipped(state)) { phaseTimerJob?.cancel(); resolveVoting() }
+        if (engine.allVotedOrSkipped(state)) {
+            resolveMutex.withLock {
+                if (state.phase == GamePhase.VOTING) { phaseTimerJob?.cancel(); resolveVoting() }
+            }
+        }
     }
 
     private suspend fun resolveVoting() {
