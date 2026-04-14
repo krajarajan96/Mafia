@@ -800,21 +800,39 @@ private fun EliminationContent(voteResult: ServerMessage.VoteResult?, voteLog: L
 
 @Composable
 private fun GameOverContent(lastEvent: ServerMessage?, allPlayers: List<PlayerPublicInfo>, onLeave: () -> Unit) {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        val event = lastEvent as? ServerMessage.GameOver
-        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
-            val isTownWin = event?.winner == Team.TOWN
+    val event = lastEvent as? ServerMessage.GameOver
+    val isTownWin = event?.winner == Team.TOWN
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        contentPadding = PaddingValues(24.dp)
+    ) {
+        item {
+            Spacer(Modifier.height(24.dp))
             Text(if (isTownWin) "🎉" else "🔪", fontSize = 72.sp)
             Spacer(Modifier.height(16.dp))
-            Text(if (isTownWin) "Town Wins!" else "Mafia Wins!", fontSize = 32.sp, fontWeight = FontWeight.Black, color = if (isTownWin) TownGreen else MafiaRed)
-            // Show all roles with player names
-            event?.allRoles?.let { allRoles ->
-                Spacer(Modifier.height(24.dp))
-                Surface(color = Color.White.copy(0.08f), shape = RoundedCornerShape(12.dp)) {
+            Text(
+                if (isTownWin) "Town Wins!" else "Mafia Wins!",
+                fontSize = 32.sp, fontWeight = FontWeight.Black,
+                color = if (isTownWin) TownGreen else MafiaRed
+            )
+            Spacer(Modifier.height(20.dp))
+            Button(
+                onClick = onLeave,
+                colors = ButtonDefaults.buttonColors(containerColor = MafiaPurple),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth().height(52.dp)
+            ) {
+                Text("Back to Menu", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+        event?.allRoles?.let { allRoles ->
+            item { Spacer(Modifier.height(24.dp)) }
+            item {
+                Surface(color = Color.White.copy(0.08f), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(12.dp)) {
                         Text("Final Roles", fontSize = 13.sp, color = Color.White.copy(0.5f), fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.height(6.dp))
-                        // Sort: Mafia first, then Town
                         val sorted = allRoles.entries.sortedWith(compareByDescending<Map.Entry<String, Role>> { it.value.isMafia() }.thenBy { it.value.displayName })
                         sorted.forEach { (playerId, role) ->
                             val player = allPlayers.find { it.id == playerId }
@@ -829,10 +847,7 @@ private fun GameOverContent(lastEvent: ServerMessage?, allPlayers: List<PlayerPu
                         }
                     }
                 }
-            }
-            Spacer(Modifier.height(32.dp))
-            Button(onClick = onLeave, colors = ButtonDefaults.buttonColors(containerColor = MafiaPurple), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                Text("Back to Menu", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(16.dp))
             }
         }
     }
