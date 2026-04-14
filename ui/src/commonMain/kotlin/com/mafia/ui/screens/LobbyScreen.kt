@@ -6,6 +6,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -71,7 +73,11 @@ fun LobbyScreen(isMultiplayer: Boolean, onCreateRoom: (String, String, GameMode)
                     colors = ButtonDefaults.buttonColors(containerColor = MafiaPurple), shape = RoundedCornerShape(14.dp)) { Text(if (isMultiplayer) "Create Room" else "Start Game", fontSize = 16.sp, fontWeight = FontWeight.SemiBold) }
             }
             if (isMultiplayer && !showJoin) TextButton(onClick = { showJoin = true }) { Text("Have a room code? Join here", color = MafiaGold, fontSize = 14.sp) }
-            TextButton(onClick = onBack) { Text("← Back", color = Color.White.copy(0.5f)) }
+            TextButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White.copy(0.5f), modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Back", color = Color.White.copy(0.5f))
+            }
         }
     }
 }

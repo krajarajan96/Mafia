@@ -18,7 +18,8 @@ data class GameState(
     val ministerVetoUsed: Boolean = false,
     val ministerVetoThisRound: Boolean = false,
     val winner: Team? = null,
-    val chatMessages: List<ChatMessage> = emptyList()
+    val chatMessages: List<ChatMessage> = emptyList(),
+    val mafiaChatMessages: List<ChatMessage> = emptyList()
 ) {
     val alivePlayers get() = players.filter { it.isAlive }
     val deadPlayers get() = players.filter { !it.isAlive }
@@ -47,14 +48,31 @@ data class GameState(
 
 @Serializable
 data class NightActions(
-    val mafiaTarget: String? = null,
+    val mafiaVotes: Map<String, String> = emptyMap(), // mafiaPlayerId → targetId
     val doctorProtect: String? = null,
     val detectiveInvestigate: String? = null,
     val vigilanteTarget: String? = null,
     val escortBlock: String? = null
 ) {
+    /** Returns the agreed mafia kill target, or null if no votes or tied. */
+    fun resolvedMafiaTarget(): String? {
+        if (mafiaVotes.isEmpty()) return null
+        val tally = mafiaVotes.values.groupingBy { it }.eachCount()
+        val max = tally.maxOf { it.value }
+        val top = tally.filter { it.value == max }.keys
+        return if (top.size == 1) top.first() else null
+    }
+
+    /** Returns all targets tied for most votes — used for random tie-break at timer expiry. */
+    fun tiedMafiaTargets(): List<String> {
+        if (mafiaVotes.isEmpty()) return emptyList()
+        val tally = mafiaVotes.values.groupingBy { it }.eachCount()
+        val max = tally.maxOf { it.value }
+        return tally.filter { it.value == max }.keys.toList()
+    }
+
     fun resolve(): NightResolution {
-        // Escort block nullifies the blocked player's action
+        val mafiaTarget = resolvedMafiaTarget()
         val effectiveMafiaTarget = if (mafiaTarget != null && mafiaTarget == escortBlock) null else mafiaTarget
         val effectiveVigilanteTarget = if (vigilanteTarget != null && vigilanteTarget == escortBlock) null else vigilanteTarget
         val effectiveDetective = if (detectiveInvestigate != null && detectiveInvestigate == escortBlock) null else detectiveInvestigate
@@ -83,7 +101,8 @@ data class NightResolution(
 @Serializable
 data class ChatMessage(
     val id: String, val senderId: String, val senderName: String,
-    val text: String, val timestamp: Long, val isSystem: Boolean = false
+    val text: String, val timestamp: Long, val isSystem: Boolean = false,
+    val round: Int = 0
 )
 
 /** A single entry in the voting log shown to all players. */

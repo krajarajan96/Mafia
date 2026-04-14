@@ -8,6 +8,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -136,7 +138,7 @@ fun WaitingRoomScreen(
                             }
 
                             // Classic / Custom preset row
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 PresetChip(
                                     label = "Classic",
                                     subtitle = "Mafia · Doctor · Townsfolk",
@@ -148,14 +150,14 @@ fun WaitingRoomScreen(
                                         )
                                         onUpdateSettings(settings)
                                     },
-                                    modifier = Modifier.weight(1f)
+                                    modifier = Modifier.weight(1f).fillMaxHeight()
                                 )
                                 PresetChip(
                                     label = "Custom",
                                     subtitle = "Choose specials below",
                                     selected = !isClassic,
-                                    onClick = {},   // just a visual indicator; toggling any special switches to custom
-                                    modifier = Modifier.weight(1f)
+                                    onClick = {},
+                                    modifier = Modifier.weight(1f).fillMaxHeight()
                                 )
                             }
 
@@ -207,6 +209,13 @@ fun WaitingRoomScreen(
                                 }
                                 Switch(checked = settings.revealRoleOnDeath, onCheckedChange = { settings = settings.copy(revealRoleOnDeath = it); onUpdateSettings(settings) }, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MafiaPurple))
                             }
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("📜 Game History", fontSize = 14.sp, color = Color.White)
+                                    Text("Show full event log during game (off = eliminations only)", fontSize = 12.sp, color = Color.White.copy(0.4f))
+                                }
+                                Switch(checked = settings.enableGameHistory, onCheckedChange = { settings = settings.copy(enableGameHistory = it); onUpdateSettings(settings) }, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MafiaPurple))
+                            }
                         }
                     }
                 }
@@ -221,7 +230,11 @@ fun WaitingRoomScreen(
                 Text("Waiting for host to start...", color = Color.White.copy(0.5f), fontSize = 14.sp)
             }
             Spacer(Modifier.height(12.dp))
-            TextButton(onClick = onLeave) { Text(if (isSinglePlayer) "← Back" else "← Leave Room", color = MafiaRed.copy(0.7f)) }
+            TextButton(onClick = onLeave) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MafiaRed.copy(0.7f), modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(if (isSinglePlayer) "Back" else "Leave Room", color = MafiaRed.copy(0.7f))
+            }
         }
     }
 }

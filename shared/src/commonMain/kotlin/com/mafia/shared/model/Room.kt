@@ -31,7 +31,8 @@ data class GameSettings(
     val enableDetective: Boolean = false,
     val enableVigilante: Boolean = false,
     val enableEscort: Boolean = false,
-    val enableMinister: Boolean = false
+    val enableMinister: Boolean = false,
+    val enableGameHistory: Boolean = true
 )
 
 fun generateRoomCode(): String {

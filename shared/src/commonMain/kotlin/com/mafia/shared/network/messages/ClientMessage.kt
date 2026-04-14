@@ -16,6 +16,8 @@ sealed class ClientMessage {
     @Serializable data object SkipVote : ClientMessage()
     @Serializable data object UseVeto : ClientMessage()
     @Serializable data class UpdateSettings(val settings: GameSettings) : ClientMessage()
+    @Serializable data class MafiaVote(val targetId: String) : ClientMessage()
+    @Serializable data class MafiaChat(val text: String) : ClientMessage()
     @Serializable data object LeaveRoom : ClientMessage()
     @Serializable data object Ready : ClientMessage()
 

@@ -43,6 +43,11 @@ fun MafiaApp(repository: GameRepository) {
     val revealedRoles by repository.revealedRoles.collectAsState()
     val allPlayers by repository.allPlayers.collectAsState()
     val lastEvent by repository.lastEvent.collectAsState(initial = null)
+    val mafiaTeammates by repository.mafiaTeammates.collectAsState()
+    val mafiaChatMessages by repository.mafiaChatMessages.collectAsState()
+    val mafiaVoteTally by repository.mafiaVoteTally.collectAsState()
+    val mafiaVoteTie by repository.mafiaVoteTie.collectAsState()
+    val enableGameHistory = room?.settings?.enableGameHistory ?: true
 
     LaunchedEffect(Unit) {
         repository.lastEvent.collect { event ->
@@ -92,8 +97,11 @@ fun MafiaApp(repository: GameRepository) {
                         phase, round, myRole, myPlayerId, alivePlayers, chatMessages, timer,
                         voteTally, detectiveResult, nightSummary, voteResult, voteLog,
                         eventLog, ministerVetoUsed, revealedRoles, allPlayers, lastEvent,
+                        mafiaTeammates, mafiaChatMessages, mafiaVoteTally, mafiaVoteTie,
+                        enableGameHistory,
                         onNightAction = { repository.submitNightAction(it) },
                         onSendChat = { repository.sendChat(it) },
+                        onSendMafiaChat = { repository.sendMafiaChat(it) },
                         onVote = { repository.castVote(it) },
                         onSkipVote = { repository.skipVote() },
                         onUseVeto = { repository.useMinisterVeto() },

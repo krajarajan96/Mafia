@@ -51,6 +51,12 @@ class GameSession(
         room = room.copy(status = RoomStatus.IN_GAME)
         broadcastAll(ServerMessage.GameStarted(state.players.size))
         state.players.forEach { p -> p.role?.let { sendTo(p.id, ServerMessage.RoleAssigned(it)) } }
+        // Reveal mafia team to each mafia player
+        val mafiaPlayers = state.players.filter { it.role?.isMafia() == true }
+        mafiaPlayers.forEach { mafia ->
+            val teammates = mafiaPlayers.filter { it.id != mafia.id }.map { PlayerPublicInfo.from(it) }
+            sendTo(mafia.id, ServerMessage.MafiaTeamRevealed(teammates))
+        }
         transitionTo(GamePhase.ROLE_REVEAL)
     }
 
@@ -83,7 +89,16 @@ class GameSession(
     private suspend fun onPhaseTimeout(phase: GamePhase) {
         when (phase) {
             GamePhase.ROLE_REVEAL -> transitionTo(GamePhase.NIGHT)
-            GamePhase.NIGHT -> resolveNight()
+            GamePhase.NIGHT -> {
+                // If mafia votes are tied, pick random from tied targets before resolving
+                if (state.nightActions.mafiaVotes.isNotEmpty() && state.nightActions.resolvedMafiaTarget() == null) {
+                    val randomTarget = engine.pickRandomMafiaTarget(state)
+                    if (randomTarget != null) {
+                        state = state.copy(nightActions = state.nightActions.copy(mafiaVotes = mapOf("resolved" to randomTarget)))
+                    }
+                }
+                resolveNight()
+            }
             GamePhase.NIGHT_RESULT -> transitionTo(GamePhase.DISCUSSION)
             GamePhase.DISCUSSION -> transitionTo(GamePhase.VOTING)
             GamePhase.VOTING -> resolveVoting()
@@ -93,19 +108,61 @@ class GameSession(
     }
 
     suspend fun submitNightAction(playerId: String, targetId: String) {
-        state = engine.submitNightAction(state, playerId, targetId)
+        val player = state.getPlayer(playerId) ?: return
+        // Non-mafia roles use the legacy night action path
+        if (player.role?.isMafia() != true) {
+            state = engine.submitNightAction(state, playerId, targetId)
+            sendTo(playerId, ServerMessage.NightActionAck(true))
+            if (player.role == Role.DETECTIVE) {
+                state.getPlayer(targetId)?.let {
+                    sendTo(playerId, ServerMessage.DetectiveResult(targetId, it.name, it.role?.isMafia() == true))
+                }
+            }
+            if (engine.allNightActionsSubmitted(state)) {
+                resolveMutex.withLock {
+                    if (state.phase == GamePhase.NIGHT) { phaseTimerJob?.cancel(); resolveNight() }
+                }
+            }
+        }
+    }
+
+    suspend fun submitMafiaVote(playerId: String, targetId: String) {
+        val player = state.getPlayer(playerId) ?: return
+        if (!player.isAlive || player.role?.isMafia() != true) return
+        state = engine.submitMafiaVote(state, playerId, targetId)
+        val tally = state.nightActions.mafiaVotes.values.groupingBy { it }.eachCount()
+        broadcastToMafia(ServerMessage.MafiaVoteUpdate(playerId, targetId, tally))
         sendTo(playerId, ServerMessage.NightActionAck(true))
-        val player = state.getPlayer(playerId)
-        if (player?.role == Role.DETECTIVE) {
-            state.getPlayer(targetId)?.let {
-                sendTo(playerId, ServerMessage.DetectiveResult(targetId, it.name, it.role?.isMafia() == true))
+
+        if (engine.allMafiaVoted(state)) {
+            val resolved = state.nightActions.resolvedMafiaTarget()
+            if (resolved != null) {
+                // Clear majority — check if all night actions are now done
+                if (engine.allNightActionsSubmitted(state)) {
+                    resolveMutex.withLock {
+                        if (state.phase == GamePhase.NIGHT) { phaseTimerJob?.cancel(); resolveNight() }
+                    }
+                }
+            } else {
+                // Tie — reset mafia votes and ask them to re-vote
+                val tieTally = state.nightActions.mafiaVotes.values.groupingBy { it }.eachCount()
+                state = state.copy(nightActions = state.nightActions.copy(mafiaVotes = emptyMap()))
+                broadcastToMafia(ServerMessage.MafiaVoteTie(tieTally))
             }
         }
-        if (engine.allNightActionsSubmitted(state)) {
-            resolveMutex.withLock {
-                if (state.phase == GamePhase.NIGHT) { phaseTimerJob?.cancel(); resolveNight() }
-            }
-        }
+    }
+
+    suspend fun handleMafiaChat(senderId: String, text: String) {
+        val sender = state.getPlayer(senderId) ?: return
+        if (!sender.isAlive || sender.role?.isMafia() != true) return
+        val message = ChatMessage(
+            id = "${roomId}_mafia_${System.currentTimeMillis()}",
+            senderId = senderId, senderName = sender.name,
+            text = text, timestamp = System.currentTimeMillis(),
+            round = state.round
+        )
+        state = state.copy(mafiaChatMessages = state.mafiaChatMessages + message)
+        broadcastToMafia(ServerMessage.MafiaChatReceived(message))
     }
 
     suspend fun submitMinisterVeto(playerId: String) {
@@ -176,7 +233,12 @@ class GameSession(
     suspend fun handleChat(senderId: String, text: String) {
         val sender = state.getPlayer(senderId) ?: return
         if (!sender.isAlive && state.phase.isDayPhase()) return
-        val message = ChatMessage("${roomId}_${System.currentTimeMillis()}", senderId, sender.name, text, System.currentTimeMillis())
+        val message = ChatMessage(
+            id = "${roomId}_${System.currentTimeMillis()}",
+            senderId = senderId, senderName = sender.name,
+            text = text, timestamp = System.currentTimeMillis(),
+            round = state.round
+        )
         state = state.copy(chatMessages = state.chatMessages + message)
         broadcastAll(ServerMessage.ChatReceived(message))
     }
@@ -187,7 +249,13 @@ class GameSession(
                 delay((1000L..3000L).random())
                 aiController?.let { ai ->
                     when (phase) {
-                        GamePhase.NIGHT -> ai.chooseNightTarget(state, player)?.let { submitNightAction(player.id, it) }
+                        GamePhase.NIGHT -> {
+                            val target = ai.chooseNightTarget(state, player)
+                            if (target != null) {
+                                if (player.role?.isMafia() == true) submitMafiaVote(player.id, target)
+                                else submitNightAction(player.id, target)
+                            }
+                        }
                         GamePhase.DISCUSSION -> ai.generateDiscussion(state, player).forEach { msg -> delay((2000L..5000L).random()); handleChat(player.id, msg) }
                         GamePhase.VOTING -> ai.chooseVoteTarget(state, player)?.let { submitVote(player.id, it) }
                         else -> {}
@@ -207,6 +275,13 @@ class GameSession(
     private fun broadcastAll(message: ServerMessage) {
         val encoded = ServerMessage.encode(message)
         connections.forEach { (_, s) -> scope.launch { try { s.send(Frame.Text(encoded)) } catch (_: Exception) {} } }
+    }
+
+    private fun broadcastToMafia(message: ServerMessage) {
+        val encoded = ServerMessage.encode(message)
+        state.aliveMafia.forEach { mafia ->
+            connections[mafia.id]?.let { s -> scope.launch { try { s.send(Frame.Text(encoded)) } catch (_: Exception) {} } }
+        }
     }
 
     private fun sendTo(playerId: String, message: ServerMessage) {

@@ -30,6 +30,14 @@ class GameRepository(
     val alivePlayers: StateFlow<List<PlayerPublicInfo>> = _alivePlayers.asStateFlow()
     private val _chatMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val chatMessages: StateFlow<List<ChatMessage>> = _chatMessages.asStateFlow()
+    private val _mafiaChatMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
+    val mafiaChatMessages: StateFlow<List<ChatMessage>> = _mafiaChatMessages.asStateFlow()
+    private val _mafiaTeammates = MutableStateFlow<List<PlayerPublicInfo>>(emptyList())
+    val mafiaTeammates: StateFlow<List<PlayerPublicInfo>> = _mafiaTeammates.asStateFlow()
+    private val _mafiaVoteTally = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val mafiaVoteTally: StateFlow<Map<String, Int>> = _mafiaVoteTally.asStateFlow()
+    private val _mafiaVoteTie = MutableStateFlow(false)
+    val mafiaVoteTie: StateFlow<Boolean> = _mafiaVoteTie.asStateFlow()
     private val _timer = MutableStateFlow(0)
     val timer: StateFlow<Int> = _timer.asStateFlow()
     private val _lastEvent = MutableSharedFlow<ServerMessage>(replay = 1)
@@ -61,6 +69,7 @@ class GameRepository(
     private var localSettings: GameSettings = GameSettings()
     private var localGameJob: Job? = null
     private var pendingNightAction: CompletableDeferred<String>? = null
+    private var pendingMafiaVote: CompletableDeferred<String>? = null
     private var pendingVote: CompletableDeferred<String>? = null
     private var localMsgCounter = 0
     private var localPlayerName: String = ""
@@ -83,16 +92,27 @@ class GameRepository(
                 _phase.value = msg.phase; _round.value = msg.round
                 _alivePlayers.value = msg.alivePlayers; _timer.value = msg.durationSeconds
                 _voteTally.value = emptyMap()
-                // Snapshot all players at game start (everyone is alive at ROLE_REVEAL)
                 if (msg.phase == GamePhase.ROLE_REVEAL) _allPlayers.value = msg.alivePlayers
-                if (msg.phase == GamePhase.NIGHT) { _detectiveResult.value = null; _nightSummary.value = null }
+                if (msg.phase == GamePhase.NIGHT) {
+                    _detectiveResult.value = null; _nightSummary.value = null
+                    _mafiaVoteTally.value = emptyMap(); _mafiaVoteTie.value = false
+                }
                 if (msg.phase == GamePhase.VOTING) _voteLog.value = emptyList()
             }
             is ServerMessage.TimerTick -> _timer.value = msg.secondsRemaining
             is ServerMessage.ChatReceived -> _chatMessages.value = _chatMessages.value + msg.message
+            is ServerMessage.MafiaChatReceived -> _mafiaChatMessages.value = _mafiaChatMessages.value + msg.message
+            is ServerMessage.MafiaTeamRevealed -> _mafiaTeammates.value = msg.teammates
+            is ServerMessage.MafiaVoteUpdate -> {
+                _mafiaVoteTally.value = msg.tally
+                _mafiaVoteTie.value = false
+            }
+            is ServerMessage.MafiaVoteTie -> {
+                _mafiaVoteTally.value = msg.tally
+                _mafiaVoteTie.value = true
+            }
             is ServerMessage.DetectiveResult -> _detectiveResult.value = msg
             is ServerMessage.NightSummary -> {
-                // Track revealed roles of eliminated players
                 if (msg.eliminatedPlayer != null && msg.eliminatedRole != null)
                     _revealedRoles.value = _revealedRoles.value + (msg.eliminatedPlayer.id to msg.eliminatedRole)
                 _nightSummary.value = msg
@@ -119,7 +139,6 @@ class GameRepository(
                 _eventLog.value = _eventLog.value + GameEvent(round, "Vote", voteDesc, false)
             }
             is ServerMessage.VoteResult -> {
-                // Track revealed roles of eliminated players
                 if (msg.eliminatedPlayer != null && msg.eliminatedRole != null)
                     _revealedRoles.value = _revealedRoles.value + (msg.eliminatedPlayer.id to msg.eliminatedRole)
                 _voteResult.value = msg
@@ -156,8 +175,16 @@ class GameRepository(
     fun accuse(targetId: String, reason: String) = socket.send(ClientMessage.Accuse(targetId, reason))
 
     fun submitNightAction(targetId: String) {
-        if (isLocalGame) pendingNightAction?.complete(targetId)
-        else socket.send(ClientMessage.NightAction(targetId))
+        if (isLocalGame) {
+            // Mafia players use the mafia vote path
+            val humanRole = _myRole.value
+            if (humanRole?.isMafia() == true) pendingMafiaVote?.complete(targetId)
+            else pendingNightAction?.complete(targetId)
+        } else {
+            // Non-mafia roles use NightAction; mafia uses MafiaVote
+            if (_myRole.value?.isMafia() == true) socket.send(ClientMessage.MafiaVote(targetId))
+            else socket.send(ClientMessage.NightAction(targetId))
+        }
     }
 
     fun sendChat(text: String) {
@@ -166,14 +193,29 @@ class GameRepository(
             val name = localState?.getPlayer(playerId)?.name ?: "You"
             val msg = ChatMessage(
                 id = "local_${localMsgCounter++}",
-                senderId = playerId,
-                senderName = name,
-                text = text,
-                timestamp = localMsgCounter.toLong()
+                senderId = playerId, senderName = name,
+                text = text, timestamp = localMsgCounter.toLong(),
+                round = _round.value
             )
             _chatMessages.value = _chatMessages.value + msg
         } else {
             socket.send(ClientMessage.SendChat(text))
+        }
+    }
+
+    fun sendMafiaChat(text: String) {
+        if (isLocalGame) {
+            val playerId = _myPlayerId.value ?: return
+            val name = localState?.getPlayer(playerId)?.name ?: "You"
+            val msg = ChatMessage(
+                id = "local_mafia_${localMsgCounter++}",
+                senderId = playerId, senderName = name,
+                text = text, timestamp = localMsgCounter.toLong(),
+                round = _round.value
+            )
+            _mafiaChatMessages.value = _mafiaChatMessages.value + msg
+        } else {
+            socket.send(ClientMessage.MafiaChat(text))
         }
     }
 
@@ -192,35 +234,34 @@ class GameRepository(
             val playerId = _myPlayerId.value ?: return
             localState = engine.submitMinisterVeto(localState ?: return, playerId)
             _ministerVetoUsed.value = localState?.ministerVetoUsed == true
-            pendingVote?.complete(SKIP_VOTE) // advance voting phase
+            pendingVote?.complete(SKIP_VOTE)
         } else {
             socket.send(ClientMessage.UseVeto)
         }
     }
 
     fun updateSettings(settings: GameSettings) {
-        if (isLocalGame) {
-            localSettings = settings
-        } else {
-            socket.send(ClientMessage.UpdateSettings(settings))
-        }
+        if (isLocalGame) localSettings = settings
+        else socket.send(ClientMessage.UpdateSettings(settings))
     }
 
     fun leaveRoom() {
         if (isLocalGame) {
             localGameJob?.cancel()
-            isLocalGame = false
-            localState = null
+            isLocalGame = false; localState = null
         } else {
             socket.send(ClientMessage.LeaveRoom)
         }
         _room.value = null; _myRole.value = null; _phase.value = GamePhase.LOBBY
         _chatMessages.value = emptyList(); _alivePlayers.value = emptyList()
+        _mafiaChatMessages.value = emptyList(); _mafiaTeammates.value = emptyList()
     }
 
     fun resetForNewGame() {
         isLocalGame = false; localState = null; localGameJob?.cancel()
-        _myRole.value = null; _phase.value = GamePhase.LOBBY; _chatMessages.value = emptyList()
+        _myRole.value = null; _phase.value = GamePhase.LOBBY
+        _chatMessages.value = emptyList(); _mafiaChatMessages.value = emptyList()
+        _mafiaTeammates.value = emptyList(); _mafiaVoteTally.value = emptyMap(); _mafiaVoteTie.value = false
         _detectiveResult.value = null; _voteTally.value = emptyMap()
         _nightSummary.value = null; _voteResult.value = null; _voteLog.value = emptyList()
         _round.value = 0; _alivePlayers.value = emptyList(); _allPlayers.value = emptyList()
@@ -229,30 +270,21 @@ class GameRepository(
 
     // ── Local single-player game loop ───────────────────────────────────────
 
-    /** Sets up a local game lobby so the host can configure settings in WaitingRoom before starting. */
     fun prepareLocalGame(playerName: String, playerEmoji: String) {
         isLocalGame = true
-        localPlayerName = playerName
-        localPlayerEmoji = playerEmoji
+        localPlayerName = playerName; localPlayerEmoji = playerEmoji
         localSettings = GameSettings()
         val humanId = "local_player"
         _myPlayerId.value = humanId
         val humanInfo = PlayerPublicInfo(id = humanId, name = playerName, avatarEmoji = playerEmoji, isHost = true, isAI = false, isAlive = true, isConnected = true)
-        val fakeRoom = Room(
-            id = "local", code = "LOCAL",
-            hostId = humanId, mode = GameMode.SINGLE_PLAYER,
-            players = listOf(humanInfo)
-        )
+        val fakeRoom = Room(id = "local", code = "LOCAL", hostId = humanId, mode = GameMode.SINGLE_PLAYER, players = listOf(humanInfo))
         _room.value = fakeRoom
         scope.launch { _lastEvent.emit(ServerMessage.RoomCreated(fakeRoom, humanId)) }
     }
 
     fun startLocalGame(playerName: String, playerEmoji: String, settings: GameSettings = GameSettings()) {
-        isLocalGame = true
-        localPlayerName = playerName
-        localPlayerEmoji = playerEmoji
-        localSettings = settings
-        localGameJob?.cancel()
+        isLocalGame = true; localPlayerName = playerName; localPlayerEmoji = playerEmoji
+        localSettings = settings; localGameJob?.cancel()
         localGameJob = scope.launch { runLocalGame(playerName, playerEmoji) }
     }
 
@@ -264,19 +296,22 @@ class GameRepository(
 
         localState = GameState(roomId = "local", players = allPlayers, round = 0)
         _myPlayerId.value = humanId
-        _myRole.value = allPlayers.first { it.id == humanId }.role
+        val humanRole = allPlayers.first { it.id == humanId }.role
+        _myRole.value = humanRole
         val publicPlayers = allPlayers.map { PlayerPublicInfo.from(it) }
-        _alivePlayers.value = publicPlayers
-        _allPlayers.value = publicPlayers
-        _chatMessages.value = emptyList()
-        _round.value = 0
-        _voteTally.value = emptyMap()
-        _voteLog.value = emptyList()
-        _detectiveResult.value = null
-        _nightSummary.value = null
-        _voteResult.value = null
-        _eventLog.value = emptyList()
-        _ministerVetoUsed.value = false
+        _alivePlayers.value = publicPlayers; _allPlayers.value = publicPlayers
+        _chatMessages.value = emptyList(); _mafiaChatMessages.value = emptyList()
+        _round.value = 0; _voteTally.value = emptyMap(); _voteLog.value = emptyList()
+        _detectiveResult.value = null; _nightSummary.value = null; _voteResult.value = null
+        _eventLog.value = emptyList(); _ministerVetoUsed.value = false
+        _mafiaVoteTally.value = emptyMap(); _mafiaVoteTie.value = false
+
+        // Reveal mafia teammates to human if they are mafia
+        if (humanRole?.isMafia() == true) {
+            _mafiaTeammates.value = allPlayers
+                .filter { it.role?.isMafia() == true && it.id != humanId }
+                .map { PlayerPublicInfo.from(it) }
+        }
 
         _lastEvent.emit(ServerMessage.GameStarted(allPlayers.size))
         localPhase(GamePhase.ROLE_REVEAL, GamePhase.ROLE_REVEAL.defaultDurationSeconds)
@@ -292,22 +327,39 @@ class GameRepository(
                 eliminatedThisRound = null, vigilanteEliminated = null,
                 savedThisNight = false, ministerVetoThisRound = false
             )
-            _detectiveResult.value = null
-            _voteTally.value = emptyMap()
+            _detectiveResult.value = null; _voteTally.value = emptyMap()
+            _mafiaVoteTally.value = emptyMap(); _mafiaVoteTie.value = false
 
             // ── NIGHT ───────────────────────────────────────────────────────
-            pendingNightAction = CompletableDeferred()
-            val nightDeferred = pendingNightAction!!
+            val humanPlayer = localState!!.getPlayer(humanId)
+            val humanIsMafia = humanPlayer?.role?.isMafia() == true
+
+            pendingNightAction = if (!humanIsMafia && humanPlayer?.role?.hasNightAction == true) CompletableDeferred() else null
+            pendingMafiaVote = if (humanIsMafia) CompletableDeferred() else null
+            val nightDeferred = pendingNightAction
+            val mafiaVoteDeferred = pendingMafiaVote
+
             localPhaseWithWork(GamePhase.NIGHT, GamePhase.NIGHT.defaultDurationSeconds) {
                 doAINightActions()
-                val humanPlayer = localState!!.getPlayer(humanId)
-                if (humanPlayer?.isAlive == true && humanPlayer.role?.hasNightAction == true) {
-                    nightDeferred.await()
+                if (humanPlayer?.isAlive == true) {
+                    when {
+                        humanIsMafia -> mafiaVoteDeferred?.await()
+                        humanPlayer.role?.hasNightAction == true -> nightDeferred?.await()
+                    }
                 }
             }
-            pendingNightAction = null
+            pendingNightAction = null; pendingMafiaVote = null
 
-            if (nightDeferred.isCompleted) {
+            // Apply human mafia vote
+            if (humanIsMafia && mafiaVoteDeferred?.isCompleted == true) {
+                try {
+                    val target = mafiaVoteDeferred.getCompleted()
+                    localState = engine.submitMafiaVote(localState!!, humanId, target)
+                    _mafiaVoteTally.value = localState!!.nightActions.mafiaVotes.values.groupingBy { it }.eachCount()
+                } catch (_: Exception) {}
+            }
+            // Apply human non-mafia night action
+            if (!humanIsMafia && nightDeferred?.isCompleted == true) {
                 try {
                     val target = nightDeferred.getCompleted()
                     localState = engine.submitNightAction(localState!!, humanId, target)
@@ -318,9 +370,15 @@ class GameRepository(
                     }
                 } catch (_: Exception) {}
             }
+            // Tie-break for mafia if needed (local game: just pick random)
+            if (localState!!.nightActions.mafiaVotes.isNotEmpty() && localState!!.nightActions.resolvedMafiaTarget() == null) {
+                val randomTarget = engine.pickRandomMafiaTarget(localState!!)
+                if (randomTarget != null) {
+                    localState = localState!!.copy(nightActions = localState!!.nightActions.copy(mafiaVotes = mapOf("resolved" to randomTarget)))
+                }
+            }
 
             localState = engine.processNightActions(localState!!)
-            // If human was eliminated, reveal all roles so they can spectate with full info
             if (localState!!.getPlayer(humanId)?.isAlive == false && _revealedRoles.value.size < localState!!.players.size) {
                 _revealedRoles.value = localState!!.players.associate { it.id to (it.role ?: Role.TOWNSFOLK) }
             }
@@ -332,10 +390,7 @@ class GameRepository(
                 vigilanteKilledPlayer?.let { PlayerPublicInfo.from(it) },
                 vigilanteEliminatedPlayer?.let { PlayerPublicInfo.from(it) }
             )
-            _nightSummary.value = summary
-            _lastEvent.emit(summary)
-
-            // Append night event log
+            _nightSummary.value = summary; _lastEvent.emit(summary)
             val nightDesc = when {
                 summary.wasSaved -> "Someone was saved by the Doctor"
                 summary.eliminatedPlayer != null -> "${summary.eliminatedPlayer.name} was killed by the Mafia"
@@ -349,7 +404,7 @@ class GameRepository(
             localPhase(GamePhase.NIGHT_RESULT, GamePhase.NIGHT_RESULT.defaultDurationSeconds)
 
             // ── DISCUSSION ───────────────────────────────────────────────────
-            _chatMessages.value = emptyList()
+            // NOTE: Chat is NOT cleared here — persistent across rounds
             localPhase(GamePhase.DISCUSSION, GamePhase.DISCUSSION.defaultDurationSeconds)
 
             // ── VOTING ───────────────────────────────────────────────────────
@@ -359,10 +414,8 @@ class GameRepository(
             val voteDeferred = pendingVote!!
             localPhaseWithWork(GamePhase.VOTING, GamePhase.VOTING.defaultDurationSeconds) {
                 doAIVotes()
-                val humanPlayer = localState!!.getPlayer(humanId)
-                if (humanPlayer?.isAlive == true) {
-                    voteDeferred.await()
-                }
+                val hp = localState!!.getPlayer(humanId)
+                if (hp?.isAlive == true) voteDeferred.await()
             }
             pendingVote = null
 
@@ -387,7 +440,6 @@ class GameRepository(
 
             val eliminatedVId = localState!!.voteResult()
             localState = engine.processVote(localState!!)
-            // If human was voted out, reveal all roles
             if (localState!!.getPlayer(humanId)?.isAlive == false && _revealedRoles.value.size < localState!!.players.size) {
                 _revealedRoles.value = localState!!.players.associate { it.id to (it.role ?: Role.TOWNSFOLK) }
             }
@@ -396,14 +448,8 @@ class GameRepository(
             val voteResultMsg = ServerMessage.VoteResult(
                 eliminatedV?.let { PlayerPublicInfo.from(it) }, eliminatedV?.role, eliminatedVId == null, tally
             )
-            _voteResult.value = voteResultMsg
-            _lastEvent.emit(voteResultMsg)
-
-            // Append vote event log
-            val voteDesc = when {
-                eliminatedV != null -> "${eliminatedV.name} was eliminated by vote"
-                else -> "No elimination (tie or veto)"
-            }
+            _voteResult.value = voteResultMsg; _lastEvent.emit(voteResultMsg)
+            val voteDesc = if (eliminatedV != null) "${eliminatedV.name} was eliminated by vote" else "No elimination (tie or veto)"
             _eventLog.value = _eventLog.value + GameEvent(round, "Vote $round", voteDesc, eliminatedV != null)
 
             localState!!.checkWinCondition()?.let { endLocalGame(it); return }
@@ -418,34 +464,22 @@ class GameRepository(
 
     private suspend fun localPhase(phase: GamePhase, durationSec: Int) {
         val state = localState!!
-        _phase.value = phase
-        _round.value = state.round
+        _phase.value = phase; _round.value = state.round
         _alivePlayers.value = state.alivePlayers.map { PlayerPublicInfo.from(it) }
         _timer.value = durationSec
-        repeat(durationSec) { i ->
-            delay(1000)
-            _timer.value = durationSec - i - 1
-        }
+        repeat(durationSec) { i -> delay(1000); _timer.value = durationSec - i - 1 }
     }
 
     private suspend fun localPhaseWithWork(phase: GamePhase, durationSec: Int, block: suspend () -> Unit) {
         val state = localState!!
-        _phase.value = phase
-        _round.value = state.round
+        _phase.value = phase; _round.value = state.round
         _alivePlayers.value = state.alivePlayers.map { PlayerPublicInfo.from(it) }
         _timer.value = durationSec
         val timerJob = scope.launch {
-            repeat(durationSec) { i ->
-                delay(1000)
-                _timer.value = durationSec - i - 1
-            }
+            repeat(durationSec) { i -> delay(1000); _timer.value = durationSec - i - 1 }
         }
-        try {
-            withTimeoutOrNull(durationSec * 1000L) { block() }
-        } finally {
-            timerJob.cancel()
-            _timer.value = 0
-        }
+        try { withTimeoutOrNull(durationSec * 1000L) { block() } }
+        finally { timerJob.cancel(); _timer.value = 0 }
     }
 
     private fun doAINightActions() {
@@ -460,8 +494,16 @@ class GameRepository(
                 Role.ESCORT -> state.alivePlayers.filter { it.id != bot.id }.randomOrNull()?.id
                 else -> null
             }
-            target?.let { localState = engine.submitNightAction(localState!!, bot.id, it) }
+            if (target != null) {
+                localState = if (bot.role?.isMafia() == true)
+                    engine.submitMafiaVote(localState!!, bot.id, target)
+                else
+                    engine.submitNightAction(localState!!, bot.id, target)
+            }
         }
+        // Update mafia vote tally after bots vote
+        val tally = localState?.nightActions?.mafiaVotes?.values?.groupingBy { it }?.eachCount() ?: emptyMap()
+        if (tally.isNotEmpty()) _mafiaVoteTally.value = tally
     }
 
     private fun doAIVotes() {
@@ -483,8 +525,6 @@ class GameRepository(
     private suspend fun endLocalGame(winner: Team) {
         val state = localState ?: return
         _phase.value = GamePhase.GAME_OVER
-        _lastEvent.emit(
-            ServerMessage.GameOver(winner, state.players.associate { it.id to (it.role ?: Role.TOWNSFOLK) })
-        )
+        _lastEvent.emit(ServerMessage.GameOver(winner, state.players.associate { it.id to (it.role ?: Role.TOWNSFOLK) }))
     }
 }

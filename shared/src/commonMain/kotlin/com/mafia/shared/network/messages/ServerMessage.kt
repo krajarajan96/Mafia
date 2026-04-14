@@ -24,6 +24,10 @@ sealed class ServerMessage {
     @Serializable data class GameOver(val winner: Team, val allRoles: Map<String, Role>, val mvp: String? = null) : ServerMessage()
     @Serializable data class TimerTick(val secondsRemaining: Int) : ServerMessage()
     @Serializable data class SettingsUpdated(val settings: GameSettings) : ServerMessage()
+    @Serializable data class MafiaTeamRevealed(val teammates: List<PlayerPublicInfo>) : ServerMessage()
+    @Serializable data class MafiaChatReceived(val message: ChatMessage) : ServerMessage()
+    @Serializable data class MafiaVoteUpdate(val voterId: String, val targetId: String, val tally: Map<String, Int>) : ServerMessage()
+    @Serializable data class MafiaVoteTie(val tally: Map<String, Int>) : ServerMessage()
 
     companion object {
         private val json = Json { ignoreUnknownKeys = true; classDiscriminator = "type" }

@@ -6,6 +6,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -109,7 +111,9 @@ fun HomeScreen(onSinglePlayer: () -> Unit, onMultiplayer: () -> Unit, onHowToPla
             Spacer(Modifier.height(28.dp))
 
             TextButton(onClick = onHowToPlay) {
-                Text("How to Play  →", color = Color.White.copy(0.45f), fontSize = 13.sp, letterSpacing = 1.sp)
+                Text("How to Play", color = Color.White.copy(0.45f), fontSize = 13.sp, letterSpacing = 1.sp)
+                Spacer(Modifier.width(4.dp))
+                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = Color.White.copy(0.45f), modifier = Modifier.size(16.dp))
             }
         }
     }

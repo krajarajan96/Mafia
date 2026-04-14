@@ -43,7 +43,13 @@ fun GameScreen(
     revealedRoles: Map<String, Role>,
     allPlayers: List<PlayerPublicInfo>,
     lastEvent: ServerMessage?,
+    mafiaTeammates: List<PlayerPublicInfo>,
+    mafiaChatMessages: List<ChatMessage>,
+    mafiaVoteTally: Map<String, Int>,
+    mafiaVoteTie: Boolean,
+    enableGameHistory: Boolean,
     onNightAction: (String) -> Unit, onSendChat: (String) -> Unit,
+    onSendMafiaChat: (String) -> Unit,
     onVote: (String) -> Unit, onSkipVote: () -> Unit,
     onUseVeto: () -> Unit, onLeave: () -> Unit
 ) {
@@ -121,7 +127,9 @@ fun GameScreen(
                     phase, round, myRole, myPlayerId, alivePlayers, timerSeconds,
                     voteTally, detectiveResult, nightSummary, voteResult, voteLog,
                     eventLog, ministerVetoUsed, allPlayers, isEliminated, lastEvent,
-                    onNightAction, onSendChat, onVote, onSkipVote, onUseVeto, onLeave
+                    mafiaTeammates, mafiaChatMessages, mafiaVoteTally, mafiaVoteTie,
+                    enableGameHistory,
+                    onNightAction, onSendChat, onSendMafiaChat, onVote, onSkipVote, onUseVeto, onLeave
                 )
                 GameTab.CHAT -> ChatTab(chatMessages, myPlayerId, onSendChat)
             }
@@ -260,25 +268,35 @@ private fun ArenaTab(
     allPlayers: List<PlayerPublicInfo>,
     isSpectator: Boolean,
     lastEvent: ServerMessage?,
+    mafiaTeammates: List<PlayerPublicInfo>,
+    mafiaChatMessages: List<ChatMessage>,
+    mafiaVoteTally: Map<String, Int>,
+    mafiaVoteTie: Boolean,
+    enableGameHistory: Boolean,
     onNightAction: (String) -> Unit,
     onSendChat: (String) -> Unit,
+    onSendMafiaChat: (String) -> Unit,
     onVote: (String) -> Unit, onSkipVote: () -> Unit,
     onUseVeto: () -> Unit, onLeave: () -> Unit
 ) {
     when (phase) {
         GamePhase.ROLE_REVEAL -> RoleRevealContent(myRole)
-        GamePhase.NIGHT -> NightContent(myRole, myPlayerId, alivePlayers, allPlayers, isSpectator, onNightAction, eventLog)
-        GamePhase.NIGHT_RESULT -> NightResultContent(nightSummary, isSpectator, eventLog)
-        GamePhase.DISCUSSION -> DiscussionArenaContent(myRole, detectiveResult, alivePlayers, allPlayers, eventLog, onSendChat)
-        GamePhase.VOTING -> VotingContent(myRole, myPlayerId, alivePlayers, voteTally, voteLog, ministerVetoUsed, eventLog, onVote, onSkipVote, onUseVeto)
-        GamePhase.ELIMINATION -> EliminationContent(voteResult, voteLog, isSpectator, eventLog)
+        GamePhase.NIGHT -> NightContent(
+            myRole, myPlayerId, alivePlayers, allPlayers,
+            mafiaTeammates, mafiaChatMessages, mafiaVoteTally, mafiaVoteTie,
+            isSpectator, onNightAction, onSendMafiaChat, eventLog, enableGameHistory
+        )
+        GamePhase.NIGHT_RESULT -> NightResultContent(nightSummary, isSpectator, eventLog, enableGameHistory)
+        GamePhase.DISCUSSION -> DiscussionArenaContent(myRole, detectiveResult, alivePlayers, allPlayers, eventLog, enableGameHistory, onSendChat)
+        GamePhase.VOTING -> VotingContent(myRole, myPlayerId, alivePlayers, voteTally, voteLog, ministerVetoUsed, eventLog, enableGameHistory, onVote, onSkipVote, onUseVeto)
+        GamePhase.ELIMINATION -> EliminationContent(voteResult, voteLog, isSpectator, eventLog, enableGameHistory)
         GamePhase.GAME_OVER -> GameOverContent(lastEvent, allPlayers, onLeave)
         else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(phase.description, color = Color.White.copy(0.6f), textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp))
                 if (eventLog.isNotEmpty()) {
                     Spacer(Modifier.height(24.dp))
-                    EventLogSection(eventLog)
+                    GameHistorySection(eventLog, enableGameHistory)
                 }
             }
         }
@@ -306,44 +324,161 @@ private fun NightContent(
     myRole: Role?, myPlayerId: String?,
     alivePlayers: List<PlayerPublicInfo>,
     allPlayers: List<PlayerPublicInfo>,
+    mafiaTeammates: List<PlayerPublicInfo>,
+    mafiaChatMessages: List<ChatMessage>,
+    mafiaVoteTally: Map<String, Int>,
+    mafiaVoteTie: Boolean,
     isSpectator: Boolean,
     onNightAction: (String) -> Unit,
-    eventLog: List<GameEvent>
+    onSendMafiaChat: (String) -> Unit,
+    eventLog: List<GameEvent>,
+    enableGameHistory: Boolean
 ) {
+    val isMafia = myRole?.isMafia() == true
     var selected by remember { mutableStateOf<String?>(null) }
-    val targets = alivePlayers.filter { it.id != myPlayerId }
+    var voted by remember { mutableStateOf(false) }
+    // Reset selection on tie so mafia can re-vote
+    LaunchedEffect(mafiaVoteTie) { if (mafiaVoteTie) { selected = null; voted = false } }
+    // Mafia teammates IDs (so mafia can't vote for their own teammates)
+    val mafiaTeammateIds = mafiaTeammates.map { it.id }.toSet()
+    val targets = if (isMafia)
+        alivePlayers.filter { it.id != myPlayerId && it.id !in mafiaTeammateIds }
+    else
+        alivePlayers.filter { it.id != myPlayerId }
     val deadPlayers = allPlayers.filter { p -> alivePlayers.none { it.id == p.id } }
+    var mafiaText by remember { mutableStateOf("") }
+    var showMafiaChat by remember { mutableStateOf(true) }
+    val mafiaChatListState = rememberLazyListState()
+    LaunchedEffect(mafiaChatMessages.size) { if (mafiaChatMessages.isNotEmpty()) mafiaChatListState.animateScrollToItem(mafiaChatMessages.size - 1) }
+
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         item {
             Text("🌙 The town sleeps...", fontSize = 18.sp, color = Color.White.copy(0.8f))
             Spacer(Modifier.height(4.dp))
             val instr = when {
                 isSpectator -> "You are eliminated — watching the night unfold"
-                myRole == Role.MAFIA -> "Choose a player to eliminate"
+                isMafia -> if (mafiaVoteTie) "⚠️ Tie — vote again!" else "Choose a target to eliminate"
                 myRole == Role.DETECTIVE -> "Choose a player to investigate"
                 myRole == Role.DOCTOR -> "Choose a player to protect"
                 myRole == Role.VIGILANTE -> "Choose a player to shoot (careful — you die if they're innocent)"
                 myRole == Role.ESCORT -> "Choose a player to block tonight"
                 else -> "Wait for dawn..."
             }
-            Text(instr, fontSize = 14.sp, color = if (isSpectator) DeadGray else MafiaPurple.copy(0.8f), textAlign = TextAlign.Center)
+            val instrColor = if (mafiaVoteTie) MafiaRed else if (isSpectator) DeadGray else MafiaPurple.copy(0.8f)
+            Text(instr, fontSize = 14.sp, color = instrColor, textAlign = TextAlign.Center, fontWeight = if (mafiaVoteTie) FontWeight.Bold else FontWeight.Normal)
         }
+
+        // Mafia teammates strip
+        if (isMafia && mafiaTeammates.isNotEmpty()) {
+            item {
+                Spacer(Modifier.height(10.dp))
+                Surface(color = MafiaRed.copy(0.12f), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("🩸 Team:", fontSize = 12.sp, color = MafiaRed.copy(0.8f), fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.width(8.dp))
+                        mafiaTeammates.forEach { tm ->
+                            Surface(color = MafiaRed.copy(0.2f), shape = RoundedCornerShape(6.dp), modifier = Modifier.padding(end = 6.dp)) {
+                                Text("${tm.avatarEmoji} ${tm.name}", Modifier.padding(horizontal = 8.dp, vertical = 3.dp), fontSize = 12.sp, color = Color.White)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Target list
         if (!isSpectator && myRole?.hasNightAction == true) {
             item { Spacer(Modifier.height(12.dp)) }
             items(targets) { p ->
-                Surface(Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { selected = p.id }, color = if (selected == p.id) MafiaPurple.copy(0.4f) else Color.White.copy(0.08f), shape = RoundedCornerShape(12.dp)) {
+                val votes = if (isMafia) mafiaVoteTally[p.id] ?: 0 else 0
+                val isSelected = selected == p.id
+                val selectionColor = if (isMafia) MafiaRed.copy(0.4f) else MafiaPurple.copy(0.4f)
+                Surface(
+                    Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable(enabled = !voted) { selected = p.id },
+                    color = if (isSelected) selectionColor else Color.White.copy(0.08f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
                     Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(p.avatarEmoji, fontSize = 28.sp); Spacer(Modifier.width(12.dp)); Text(p.name, color = Color.White, fontSize = 16.sp)
+                        Text(p.avatarEmoji, fontSize = 28.sp)
+                        Spacer(Modifier.width(12.dp))
+                        Text(p.name, color = Color.White, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                        if (votes > 0) {
+                            Surface(color = MafiaRed.copy(0.6f), shape = CircleShape) {
+                                Text("$votes", Modifier.padding(horizontal = 10.dp, vertical = 4.dp), color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             }
             item {
                 Spacer(Modifier.height(12.dp))
-                Button(onClick = { selected?.let { onNightAction(it); selected = null } }, enabled = selected != null, colors = ButtonDefaults.buttonColors(containerColor = MafiaPurple), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().height(48.dp)) {
-                    Text("Confirm", fontWeight = FontWeight.SemiBold)
+                val confirmColor = if (isMafia) MafiaRed else MafiaPurple
+                Button(
+                    onClick = { selected?.let { onNightAction(it); if (!isMafia) voted = true } },
+                    enabled = selected != null && !voted,
+                    colors = ButtonDefaults.buttonColors(containerColor = confirmColor),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                ) {
+                    Text(if (isMafia) "Cast Vote" else "Confirm", fontWeight = FontWeight.SemiBold)
+                }
+                if (voted && !isMafia) {
+                    Spacer(Modifier.height(6.dp))
+                    Text("✓ Action submitted", color = TownGreen, fontSize = 13.sp)
                 }
             }
         }
+
+        // Mafia private chat
+        if (isMafia && !isSpectator) {
+            item {
+                Spacer(Modifier.height(16.dp))
+                Surface(color = MafiaRed.copy(0.08f), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp)) {
+                        Row(Modifier.fillMaxWidth().clickable { showMafiaChat = !showMafiaChat }, verticalAlignment = Alignment.CenterVertically) {
+                            Text("🔴 Mafia Chat", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MafiaRed, modifier = Modifier.weight(1f))
+                            Text(if (showMafiaChat) "▲" else "▼", fontSize = 10.sp, color = Color.White.copy(0.4f))
+                        }
+                        if (showMafiaChat) {
+                            Spacer(Modifier.height(8.dp))
+                            if (mafiaChatMessages.isEmpty()) {
+                                Text("No messages yet...", fontSize = 12.sp, color = Color.White.copy(0.3f))
+                            } else {
+                                mafiaChatMessages.takeLast(8).forEach { msg ->
+                                    val isMine = msg.senderId == myPlayerId
+                                    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = if (isMine) Arrangement.End else Arrangement.Start) {
+                                        Surface(color = if (isMine) MafiaRed.copy(0.35f) else Color.White.copy(0.1f), shape = RoundedCornerShape(10.dp)) {
+                                            Column(Modifier.padding(8.dp).widthIn(max = 220.dp)) {
+                                                if (!isMine) Text(msg.senderName, fontSize = 10.sp, color = MafiaRed, fontWeight = FontWeight.SemiBold)
+                                                Text(msg.text, fontSize = 13.sp, color = Color.White)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedTextField(
+                                    value = mafiaText,
+                                    onValueChange = { if (it.length <= 200) mafiaText = it },
+                                    modifier = Modifier.weight(1f),
+                                    placeholder = { Text("Mafia only...", color = Color.White.copy(0.3f), fontSize = 13.sp) },
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MafiaRed, unfocusedBorderColor = MafiaRed.copy(0.3f), focusedTextColor = Color.White, unfocusedTextColor = Color.White)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                FilledIconButton(
+                                    onClick = { if (mafiaText.isNotBlank()) { onSendMafiaChat(mafiaText); mafiaText = "" } },
+                                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = MafiaRed)
+                                ) { Text("➤", fontSize = 16.sp, color = Color.White) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if (deadPlayers.isNotEmpty()) {
             item {
                 Spacer(Modifier.height(16.dp))
@@ -361,13 +496,13 @@ private fun NightContent(
             }
         }
         if (eventLog.isNotEmpty()) {
-            item { Spacer(Modifier.height(24.dp)); EventLogSection(eventLog) }
+            item { Spacer(Modifier.height(24.dp)); GameHistorySection(eventLog, enableGameHistory) }
         }
     }
 }
 
 @Composable
-private fun NightResultContent(nightSummary: ServerMessage.NightSummary?, isSpectator: Boolean, eventLog: List<GameEvent>) {
+private fun NightResultContent(nightSummary: ServerMessage.NightSummary?, isSpectator: Boolean, eventLog: List<GameEvent>, enableGameHistory: Boolean) {
     LazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, contentPadding = PaddingValues(32.dp)) {
         item {
             when {
@@ -415,7 +550,7 @@ private fun NightResultContent(nightSummary: ServerMessage.NightSummary?, isSpec
             }
         }
         if (eventLog.isNotEmpty()) {
-            item { Spacer(Modifier.height(24.dp)); EventLogSection(eventLog) }
+            item { Spacer(Modifier.height(24.dp)); GameHistorySection(eventLog, enableGameHistory) }
         }
     }
 }
@@ -427,6 +562,7 @@ private fun DiscussionArenaContent(
     alivePlayers: List<PlayerPublicInfo>,
     allPlayers: List<PlayerPublicInfo>,
     eventLog: List<GameEvent>,
+    enableGameHistory: Boolean,
     onSendChat: (String) -> Unit
 ) {
     val aliveIds = alivePlayers.map { it.id }.toSet()
@@ -486,7 +622,7 @@ private fun DiscussionArenaContent(
         }
         // Event log
         if (eventLog.isNotEmpty()) {
-            item { Spacer(Modifier.height(8.dp)); EventLogSection(eventLog) }
+            item { Spacer(Modifier.height(8.dp)); GameHistorySection(eventLog, enableGameHistory) }
         }
     }
 }
@@ -499,6 +635,7 @@ private fun VotingContent(
     voteLog: List<VoteEntry>,
     ministerVetoUsed: Boolean,
     eventLog: List<GameEvent>,
+    enableGameHistory: Boolean,
     onVote: (String) -> Unit, onSkipVote: () -> Unit, onUseVeto: () -> Unit
 ) {
     var voted by remember { mutableStateOf(false) }
@@ -558,7 +695,7 @@ private fun VotingContent(
                 }
                 if (eventLog.isNotEmpty()) {
                     Spacer(Modifier.height(16.dp))
-                    EventLogSection(eventLog)
+                    GameHistorySection(eventLog, enableGameHistory)
                 }
             }
         }
@@ -566,7 +703,7 @@ private fun VotingContent(
 }
 
 @Composable
-private fun EliminationContent(voteResult: ServerMessage.VoteResult?, voteLog: List<VoteEntry>, isSpectator: Boolean, eventLog: List<GameEvent>) {
+private fun EliminationContent(voteResult: ServerMessage.VoteResult?, voteLog: List<VoteEntry>, isSpectator: Boolean, eventLog: List<GameEvent>, enableGameHistory: Boolean) {
     LazyColumn(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, contentPadding = PaddingValues(24.dp)) {
         item {
             val eliminated = voteResult?.eliminatedPlayer
@@ -612,7 +749,7 @@ private fun EliminationContent(voteResult: ServerMessage.VoteResult?, voteLog: L
             }
         }
         if (eventLog.isNotEmpty()) {
-            item { Spacer(Modifier.height(16.dp)); EventLogSection(eventLog) }
+            item { Spacer(Modifier.height(16.dp)); GameHistorySection(eventLog, enableGameHistory) }
         }
     }
 }
@@ -657,20 +794,58 @@ private fun GameOverContent(lastEvent: ServerMessage?, allPlayers: List<PlayerPu
     }
 }
 
-// ── Event Log (shared across Arena tabs) ─────────────────────────────────────
+// ── Game History (collapsible, grouped by round) ─────────────────────────────
 @Composable
-fun EventLogSection(eventLog: List<GameEvent>) {
+fun GameHistorySection(eventLog: List<GameEvent>, enableGameHistory: Boolean) {
+    val displayEvents = if (enableGameHistory) eventLog else eventLog.filter { it.isElimination }
+    if (displayEvents.isEmpty()) return
+
+    val groupedByRound = displayEvents.groupBy { it.round }
+    val rounds = groupedByRound.keys.sorted()
+    val maxRound = rounds.maxOrNull() ?: 0
+    var expandedRounds by remember { mutableStateOf(setOf(maxRound)) }
+    LaunchedEffect(maxRound) { expandedRounds = expandedRounds + maxRound }
+
     Surface(color = Color.White.copy(0.05f), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Text("Game History", fontSize = 13.sp, color = Color.White.copy(0.5f), fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(6.dp))
-            eventLog.reversed().take(10).forEach { event ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.Top) {
-                    Surface(color = if (event.isElimination) MafiaRed.copy(0.3f) else Color.White.copy(0.1f), shape = RoundedCornerShape(4.dp)) {
-                        Text(event.label, Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, color = if (event.isElimination) MafiaRed else Color.White.copy(0.5f), fontWeight = FontWeight.SemiBold)
+            rounds.sortedDescending().forEach { r ->
+                val events = groupedByRound[r] ?: return@forEach
+                val isExpanded = r in expandedRounds
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clickable { expandedRounds = if (isExpanded) expandedRounds - r else expandedRounds + r }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        if (r == 0) "Setup" else "Round $r",
+                        fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                        color = MafiaPurple, modifier = Modifier.weight(1f)
+                    )
+                    Text(if (isExpanded) "▲" else "▼", fontSize = 10.sp, color = Color.White.copy(0.4f))
+                }
+                if (isExpanded) {
+                    events.forEach { event ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp, horizontal = 4.dp), verticalAlignment = Alignment.Top) {
+                            Surface(
+                                color = if (event.isElimination) MafiaRed.copy(0.3f) else Color.White.copy(0.1f),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    event.label,
+                                    Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    fontSize = 11.sp,
+                                    color = if (event.isElimination) MafiaRed else Color.White.copy(0.5f),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Text(event.description, fontSize = 12.sp, color = Color.White.copy(0.7f), modifier = Modifier.weight(1f))
+                        }
                     }
-                    Spacer(Modifier.width(8.dp))
-                    Text(event.description, fontSize = 12.sp, color = Color.White.copy(0.7f), modifier = Modifier.weight(1f))
+                    Spacer(Modifier.height(2.dp))
                 }
             }
         }

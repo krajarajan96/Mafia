@@ -65,7 +65,7 @@ class GameEngine {
         val target = state.getPlayer(targetId)
         if (target == null || !target.isAlive) return state
         val actions = when (player.role) {
-            Role.MAFIA -> state.nightActions.copy(mafiaTarget = targetId)
+            Role.MAFIA -> state.nightActions.copy(mafiaVotes = state.nightActions.mafiaVotes + (playerId to targetId))
             Role.DETECTIVE -> state.nightActions.copy(detectiveInvestigate = targetId)
             Role.DOCTOR -> state.nightActions.copy(doctorProtect = targetId)
             Role.VIGILANTE -> state.nightActions.copy(vigilanteTarget = targetId)
@@ -73,6 +73,25 @@ class GameEngine {
             else -> return state
         }
         return state.copy(nightActions = actions)
+    }
+
+    fun submitMafiaVote(state: GameState, playerId: String, targetId: String): GameState {
+        val player = state.getPlayer(playerId) ?: return state
+        if (!player.isAlive || player.role?.isMafia() != true) return state
+        val target = state.getPlayer(targetId)
+        if (target == null || !target.isAlive || target.role?.isMafia() == true) return state
+        return state.copy(nightActions = state.nightActions.copy(mafiaVotes = state.nightActions.mafiaVotes + (playerId to targetId)))
+    }
+
+    fun allMafiaVoted(state: GameState): Boolean {
+        val aliveMafiaIds = state.aliveMafia.map { it.id }.toSet()
+        return aliveMafiaIds.isNotEmpty() && aliveMafiaIds.all { it in state.nightActions.mafiaVotes }
+    }
+
+    /** Picks a random target from the tied mafia votes — called at timer expiry. */
+    fun pickRandomMafiaTarget(state: GameState): String? {
+        val tied = state.nightActions.tiedMafiaTargets()
+        return tied.randomOrNull()
     }
 
     fun submitVote(state: GameState, voterId: String, targetId: String): GameState {
@@ -96,9 +115,9 @@ class GameEngine {
     }
 
     fun allNightActionsSubmitted(state: GameState): Boolean {
-        return state.alivePlayers.filter { it.role?.hasNightAction == true }.all { player ->
+        val mafiaResolved = state.nightActions.resolvedMafiaTarget() != null || state.aliveMafia.isEmpty()
+        val nonMafiaDone = state.alivePlayers.filter { it.role?.hasNightAction == true && it.role != Role.MAFIA }.all { player ->
             when (player.role) {
-                Role.MAFIA -> state.nightActions.mafiaTarget != null
                 Role.DETECTIVE -> state.nightActions.detectiveInvestigate != null
                 Role.DOCTOR -> state.nightActions.doctorProtect != null
                 Role.VIGILANTE -> state.nightActions.vigilanteTarget != null
@@ -106,6 +125,7 @@ class GameEngine {
                 else -> true
             }
         }
+        return mafiaResolved && nonMafiaDone
     }
 
     fun allVotedOrSkipped(state: GameState): Boolean {
