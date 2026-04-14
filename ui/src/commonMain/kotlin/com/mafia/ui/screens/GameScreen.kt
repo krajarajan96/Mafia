@@ -55,7 +55,7 @@ fun GameScreen(
     onUseVeto: () -> Unit, onLeave: () -> Unit
 ) {
     val isMafiaPlayer = myRole?.isMafia() == true
-    val visibleTabs = if (isMafiaPlayer) GameTab.entries else GameTab.entries.filter { it != GameTab.MAFIA }
+    val visibleTabs = if (isMafiaPlayer && mafiaTeammates.isNotEmpty()) GameTab.entries else GameTab.entries.filter { it != GameTab.MAFIA }
     var selectedTab by remember { mutableStateOf(GameTab.ARENA) }
 
     val bgGradient = when {
