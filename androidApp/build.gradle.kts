@@ -32,10 +32,10 @@ val keystoreProps = Properties().apply {
 }
 
 android {
-    namespace = "com.mafia.android"
+    namespace = "com.mafiasd.android"
     compileSdk = 35
     defaultConfig {
-        applicationId = "com.mafia.android"
+        applicationId = "com.mafiasd.android"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
