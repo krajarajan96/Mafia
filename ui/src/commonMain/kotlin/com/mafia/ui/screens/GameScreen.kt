@@ -49,10 +49,17 @@ fun GameScreen(
     mafiaVoteTally: Map<String, Int>,
     mafiaVoteTie: Boolean,
     enableGameHistory: Boolean,
+    spectators: List<PlayerPublicInfo> = emptyList(),
+    rematchInitiated: Boolean = false,
+    rematchReadyIds: List<String> = emptyList(),
+    rematchTotalPlayers: Int = 0,
     onNightAction: (String) -> Unit, onSendChat: (String) -> Unit,
     onSendMafiaChat: (String) -> Unit,
     onVote: (String) -> Unit, onSkipVote: () -> Unit,
-    onUseVeto: () -> Unit, onLeave: () -> Unit
+    onUseVeto: () -> Unit,
+    onInitiateRematch: () -> Unit = {},
+    onMarkRematchReady: () -> Unit = {},
+    onLeave: () -> Unit
 ) {
     val isMafiaPlayer = myRole?.isMafia() == true
     val visibleTabs = if (isMafiaPlayer && mafiaTeammates.isNotEmpty()) GameTab.entries else GameTab.entries.filter { it != GameTab.MAFIA }
@@ -131,8 +138,9 @@ fun GameScreen(
                     voteTally, detectiveResult, nightSummary, voteResult, voteLog,
                     eventLog, ministerVetoUsed, allPlayers, isEliminated, lastEvent,
                     mafiaTeammates, mafiaVoteTally, mafiaVoteTie,
-                    enableGameHistory,
-                    onNightAction, onSendChat, onVote, onSkipVote, onUseVeto, onLeave
+                    enableGameHistory, rematchInitiated, rematchReadyIds, rematchTotalPlayers,
+                    onNightAction, onSendChat, onVote, onSkipVote, onUseVeto,
+                    onInitiateRematch, onMarkRematchReady, onLeave
                 )
                 GameTab.CHAT -> ChatTab(chatMessages, myPlayerId, onSendChat)
                 GameTab.MAFIA -> MafiaTab(mafiaChatMessages, mafiaTeammates, myPlayerId, onSendMafiaChat)
@@ -371,10 +379,16 @@ private fun ArenaTab(
     mafiaVoteTally: Map<String, Int>,
     mafiaVoteTie: Boolean,
     enableGameHistory: Boolean,
+    rematchInitiated: Boolean = false,
+    rematchReadyIds: List<String> = emptyList(),
+    rematchTotalPlayers: Int = 0,
     onNightAction: (String) -> Unit,
     onSendChat: (String) -> Unit,
     onVote: (String) -> Unit, onSkipVote: () -> Unit,
-    onUseVeto: () -> Unit, onLeave: () -> Unit
+    onUseVeto: () -> Unit,
+    onInitiateRematch: () -> Unit = {},
+    onMarkRematchReady: () -> Unit = {},
+    onLeave: () -> Unit
 ) {
     Column(Modifier.fillMaxSize()) {
         // Persistent mafia teammates strip — visible across all phases for mafia players
@@ -406,7 +420,11 @@ private fun ArenaTab(
                 GamePhase.DISCUSSION -> DiscussionArenaContent(myRole, detectiveResult, alivePlayers, allPlayers, eventLog, enableGameHistory, onSendChat)
                 GamePhase.VOTING -> VotingContent(myRole, myPlayerId, alivePlayers, voteTally, voteLog, ministerVetoUsed, eventLog, enableGameHistory, onVote, onSkipVote, onUseVeto)
                 GamePhase.ELIMINATION -> EliminationContent(voteResult, voteLog, isSpectator, eventLog, enableGameHistory)
-                GamePhase.GAME_OVER -> GameOverContent(lastEvent, allPlayers, onLeave)
+                GamePhase.GAME_OVER -> GameOverContent(
+                    lastEvent, allPlayers, myPlayerId, myRole,
+                    rematchInitiated, rematchReadyIds, rematchTotalPlayers,
+                    onInitiateRematch, onMarkRematchReady, onLeave
+                )
                 else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(phase.description, color = Color.White.copy(0.6f), textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp))
@@ -799,9 +817,17 @@ private fun EliminationContent(voteResult: ServerMessage.VoteResult?, voteLog: L
 }
 
 @Composable
-private fun GameOverContent(lastEvent: ServerMessage?, allPlayers: List<PlayerPublicInfo>, onLeave: () -> Unit) {
+private fun GameOverContent(
+    lastEvent: ServerMessage?, allPlayers: List<PlayerPublicInfo>,
+    myPlayerId: String?, myRole: Role?,
+    rematchInitiated: Boolean, rematchReadyIds: List<String>, rematchTotalPlayers: Int,
+    onInitiateRematch: () -> Unit, onMarkRematchReady: () -> Unit, onLeave: () -> Unit
+) {
     val event = lastEvent as? ServerMessage.GameOver
     val isTownWin = event?.winner == Team.TOWN
+    val isHost = allPlayers.find { it.id == myPlayerId }?.isHost == true
+    val alreadyReady = rematchReadyIds.contains(myPlayerId)
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -817,6 +843,39 @@ private fun GameOverContent(lastEvent: ServerMessage?, allPlayers: List<PlayerPu
                 color = if (isTownWin) TownGreen else MafiaRed
             )
             Spacer(Modifier.height(20.dp))
+            // Rematch UI
+            if (isHost) {
+                Button(
+                    onClick = onInitiateRematch,
+                    colors = ButtonDefaults.buttonColors(containerColor = TownGreen),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth().height(52.dp)
+                ) {
+                    Text("🔄 Rematch", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.height(8.dp))
+            } else if (rematchInitiated && !alreadyReady) {
+                Button(
+                    onClick = onMarkRematchReady,
+                    colors = ButtonDefaults.buttonColors(containerColor = TownGreen),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth().height(52.dp)
+                ) {
+                    Text("✅ Ready for Rematch", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+            if (rematchInitiated && rematchTotalPlayers > 0) {
+                Surface(color = Color.White.copy(0.08f), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "Ready: ${rematchReadyIds.size} / $rematchTotalPlayers",
+                        Modifier.padding(12.dp),
+                        fontSize = 14.sp, color = TownGreen, fontWeight = FontWeight.SemiBold,
+                        textAlign = TextAlign.Center
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+            }
             Button(
                 onClick = onLeave,
                 colors = ButtonDefaults.buttonColors(containerColor = MafiaPurple),

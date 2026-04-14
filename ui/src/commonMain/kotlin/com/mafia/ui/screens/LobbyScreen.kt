@@ -22,7 +22,7 @@ import com.mafia.shared.model.GameMode
 import com.mafia.ui.theme.*
 
 @Composable
-fun LobbyScreen(isMultiplayer: Boolean, onCreateRoom: (String, String, GameMode) -> Unit, onJoinRoom: (String, String, String) -> Unit, onBack: () -> Unit) {
+fun LobbyScreen(isMultiplayer: Boolean, onCreateRoom: (String, String, GameMode) -> Unit, onJoinRoom: (String, String, String) -> Unit, onJoinAsSpectator: (String, String, String) -> Unit = { _, _, _ -> }, onBack: () -> Unit) {
     var name by remember { mutableStateOf("") }
     var roomCode by remember { mutableStateOf("") }
     var selectedEmoji by remember { mutableStateOf("🕵️") }
@@ -67,6 +67,8 @@ fun LobbyScreen(isMultiplayer: Boolean, onCreateRoom: (String, String, GameMode)
                     colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MafiaGold, unfocusedBorderColor = Color.White.copy(0.3f), focusedTextColor = Color.White, unfocusedTextColor = Color.White, focusedLabelColor = MafiaGold, unfocusedLabelColor = Color.White.copy(0.5f)))
                 Button(onClick = { if (name.isNotBlank() && roomCode.length == 6) onJoinRoom(roomCode, name, selectedEmoji) }, modifier = Modifier.fillMaxWidth().height(52.dp), enabled = name.isNotBlank() && roomCode.length == 6,
                     colors = ButtonDefaults.buttonColors(containerColor = MafiaGold), shape = RoundedCornerShape(14.dp)) { Text("Join Room", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color.Black) }
+                OutlinedButton(onClick = { if (name.isNotBlank() && roomCode.length == 6) onJoinAsSpectator(roomCode, name, selectedEmoji) }, modifier = Modifier.fillMaxWidth().height(52.dp), enabled = name.isNotBlank() && roomCode.length == 6,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White.copy(0.7f)), shape = RoundedCornerShape(14.dp)) { Text("👁️ Watch as Spectator", fontSize = 15.sp) }
             }
             if (!showJoin || !isMultiplayer) {
                 Button(onClick = { if (name.isNotBlank()) onCreateRoom(name, selectedEmoji, if (isMultiplayer) GameMode.MULTIPLAYER else GameMode.SINGLE_PLAYER) }, modifier = Modifier.fillMaxWidth().height(52.dp), enabled = name.isNotBlank(),

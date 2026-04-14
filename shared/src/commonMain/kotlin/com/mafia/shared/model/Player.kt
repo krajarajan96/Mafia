@@ -11,7 +11,8 @@ data class Player(
     val isAI: Boolean = false,
     val isAlive: Boolean = true,
     val role: Role? = null,
-    val isConnected: Boolean = true
+    val isConnected: Boolean = true,
+    val isSpectator: Boolean = false
 ) {
     fun eliminate(): Player = copy(isAlive = false)
     fun assignRole(role: Role): Player = copy(role = role)
@@ -22,12 +23,14 @@ data class Player(
 @Serializable
 data class PlayerPublicInfo(
     val id: String, val name: String, val avatarEmoji: String,
-    val isHost: Boolean, val isAI: Boolean, val isAlive: Boolean, val isConnected: Boolean
+    val isHost: Boolean, val isAI: Boolean, val isAlive: Boolean, val isConnected: Boolean,
+    val isSpectator: Boolean = false
 ) {
     companion object {
         fun from(player: Player) = PlayerPublicInfo(
             player.id, player.name, player.avatarEmoji,
-            player.isHost, player.isAI, player.isAlive, player.isConnected
+            player.isHost, player.isAI, player.isAlive, player.isConnected,
+            player.isSpectator
         )
     }
 }

@@ -48,6 +48,10 @@ fun MafiaApp(repository: GameRepository) {
     val mafiaVoteTally by repository.mafiaVoteTally.collectAsState()
     val mafiaVoteTie by repository.mafiaVoteTie.collectAsState()
     val enableGameHistory = room?.settings?.enableGameHistory ?: true
+    val spectators by repository.spectators.collectAsState()
+    val rematchInitiated by repository.rematchInitiated.collectAsState()
+    val rematchReadyIds by repository.rematchReadyIds.collectAsState()
+    val rematchTotalPlayers by repository.rematchTotalPlayers.collectAsState()
 
     LaunchedEffect(Unit) {
         repository.lastEvent.collect { event ->
@@ -77,6 +81,7 @@ fun MafiaApp(repository: GameRepository) {
                             } else scope.launch { repository.createRoom(m, n, e) }
                         },
                         onJoinRoom = { c, n, e -> scope.launch { repository.joinRoom(c, n, e) } },
+                        onJoinAsSpectator = { c, n, e -> scope.launch { repository.joinAsSpectator(c, n, e) } },
                         onBack = { currentScreen = Screen.Home })
                 }
                 is Screen.WaitingRoom -> {
@@ -98,13 +103,15 @@ fun MafiaApp(repository: GameRepository) {
                         voteTally, detectiveResult, nightSummary, voteResult, voteLog,
                         eventLog, ministerVetoUsed, revealedRoles, allPlayers, lastEvent,
                         mafiaTeammates, mafiaChatMessages, mafiaVoteTally, mafiaVoteTie,
-                        enableGameHistory,
+                        enableGameHistory, spectators, rematchInitiated, rematchReadyIds, rematchTotalPlayers,
                         onNightAction = { repository.submitNightAction(it) },
                         onSendChat = { repository.sendChat(it) },
                         onSendMafiaChat = { repository.sendMafiaChat(it) },
                         onVote = { repository.castVote(it) },
                         onSkipVote = { repository.skipVote() },
                         onUseVeto = { repository.useMinisterVeto() },
+                        onInitiateRematch = { repository.initiateRematch() },
+                        onMarkRematchReady = { repository.markRematchReady() },
                         onLeave = { repository.leaveRoom(); repository.resetForNewGame(); currentScreen = Screen.Home }
                     )
                 }

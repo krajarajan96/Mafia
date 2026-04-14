@@ -20,6 +20,8 @@ sealed class ClientMessage {
     @Serializable data class MafiaChat(val text: String) : ClientMessage()
     @Serializable data object LeaveRoom : ClientMessage()
     @Serializable data object Ready : ClientMessage()
+    @Serializable data class JoinAsSpectator(val roomCode: String, val playerName: String, val emoji: String = "👁️") : ClientMessage()
+    @Serializable data class RematchVote(val ready: Boolean) : ClientMessage()
 
     companion object {
         private val json = Json { ignoreUnknownKeys = true; classDiscriminator = "type" }

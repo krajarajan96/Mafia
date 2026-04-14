@@ -7,6 +7,7 @@ data class Room(
     val id: String, val code: String, val hostId: String, val mode: GameMode,
     val maxPlayers: Int = 8, val minPlayers: Int = 5,
     val players: List<PlayerPublicInfo> = emptyList(),
+    val spectators: List<PlayerPublicInfo> = emptyList(),
     val status: RoomStatus = RoomStatus.WAITING,
     val settings: GameSettings = GameSettings()
 ) {
