@@ -26,7 +26,8 @@ import com.mafia.ui.theme.*
 private enum class GameTab(val label: String, val icon: String) {
     VIDEO("Video", "🎥"),
     ARENA("Arena", "🎲"),
-    CHAT("Chat", "💬")
+    CHAT("Chat", "💬"),
+    MAFIA("Mafia", "🩸")
 }
 
 @Composable
@@ -53,6 +54,8 @@ fun GameScreen(
     onVote: (String) -> Unit, onSkipVote: () -> Unit,
     onUseVeto: () -> Unit, onLeave: () -> Unit
 ) {
+    val isMafiaPlayer = myRole?.isMafia() == true
+    val visibleTabs = if (isMafiaPlayer) GameTab.entries else GameTab.entries.filter { it != GameTab.MAFIA }
     var selectedTab by remember { mutableStateOf(GameTab.ARENA) }
 
     val bgGradient = when {
@@ -127,11 +130,12 @@ fun GameScreen(
                     phase, round, myRole, myPlayerId, alivePlayers, timerSeconds,
                     voteTally, detectiveResult, nightSummary, voteResult, voteLog,
                     eventLog, ministerVetoUsed, allPlayers, isEliminated, lastEvent,
-                    mafiaTeammates, mafiaChatMessages, mafiaVoteTally, mafiaVoteTie,
+                    mafiaTeammates, mafiaVoteTally, mafiaVoteTie,
                     enableGameHistory,
-                    onNightAction, onSendChat, onSendMafiaChat, onVote, onSkipVote, onUseVeto, onLeave
+                    onNightAction, onSendChat, onVote, onSkipVote, onUseVeto, onLeave
                 )
                 GameTab.CHAT -> ChatTab(chatMessages, myPlayerId, onSendChat)
+                GameTab.MAFIA -> MafiaTab(mafiaChatMessages, mafiaTeammates, myPlayerId, onSendMafiaChat)
             }
         }
         if (isEliminated) {
@@ -141,16 +145,18 @@ fun GameScreen(
         // Bottom Tab Bar
         Surface(color = Color(0xFF0D0B1E)) {
             Row(Modifier.fillMaxWidth().height(56.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                GameTab.entries.forEach { tab ->
+                visibleTabs.forEach { tab ->
                     val selected = selectedTab == tab
+                    val isMafiaTab = tab == GameTab.MAFIA
+                    val activeColor = if (isMafiaTab) MafiaRed else MafiaPurple
                     Column(
                         Modifier.weight(1f).fillMaxHeight().clickable { selectedTab = tab },
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
                         Text(tab.icon, fontSize = 20.sp)
-                        Text(tab.label, fontSize = 11.sp, color = if (selected) MafiaPurple else Color.White.copy(0.4f), fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
-                        if (selected) Box(Modifier.width(24.dp).height(2.dp).background(MafiaPurple, RoundedCornerShape(1.dp)))
+                        Text(tab.label, fontSize = 11.sp, color = if (selected) activeColor else Color.White.copy(0.4f), fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                        if (selected) Box(Modifier.width(24.dp).height(2.dp).background(activeColor, RoundedCornerShape(1.dp)))
                     }
                 }
             }
@@ -253,6 +259,99 @@ private fun ChatTab(
     }
 }
 
+// ── Mafia Tab ─────────────────────────────────────────────────────────────────
+@Composable
+private fun MafiaTab(
+    mafiaChatMessages: List<ChatMessage>,
+    mafiaTeammates: List<PlayerPublicInfo>,
+    myPlayerId: String?,
+    onSendMafiaChat: (String) -> Unit
+) {
+    var chatText by remember { mutableStateOf("") }
+    val listState = rememberLazyListState()
+    LaunchedEffect(mafiaChatMessages.size) { if (mafiaChatMessages.isNotEmpty()) listState.animateScrollToItem(mafiaChatMessages.size - 1) }
+
+    Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF1A0510), Color(0xFF0D0818))))) {
+        // Teammates header
+        if (mafiaTeammates.isNotEmpty()) {
+            Surface(color = MafiaRed.copy(0.15f), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    Text("🩸 Your Mafia Team", fontSize = 12.sp, color = MafiaRed.copy(0.7f), fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        mafiaTeammates.forEach { tm ->
+                            Surface(color = MafiaRed.copy(0.25f), shape = RoundedCornerShape(8.dp)) {
+                                Row(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Text(tm.avatarEmoji, fontSize = 18.sp)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(tm.name, fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Messages
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            contentPadding = PaddingValues(vertical = 10.dp)
+        ) {
+            if (mafiaChatMessages.isEmpty()) {
+                item {
+                    Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("🩸", fontSize = 32.sp)
+                            Spacer(Modifier.height(8.dp))
+                            Text("Mafia-only channel", fontSize = 14.sp, color = MafiaRed.copy(0.6f), fontWeight = FontWeight.SemiBold)
+                            Spacer(Modifier.height(4.dp))
+                            Text("Plan your moves here — town can't see this.", fontSize = 13.sp, color = Color.White.copy(0.3f))
+                        }
+                    }
+                }
+            }
+            items(mafiaChatMessages) { msg ->
+                val isMine = msg.senderId == myPlayerId
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = if (isMine) Arrangement.End else Arrangement.Start) {
+                    Surface(
+                        color = if (isMine) MafiaRed.copy(0.45f) else Color.White.copy(0.09f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Column(Modifier.padding(10.dp).widthIn(max = 260.dp)) {
+                            if (!isMine) Text(msg.senderName, fontSize = 11.sp, color = MafiaRed, fontWeight = FontWeight.SemiBold)
+                            Text(msg.text, fontSize = 14.sp, color = Color.White)
+                        }
+                    }
+                }
+            }
+        }
+        // Input
+        Row(Modifier.fillMaxWidth().background(Color.Black.copy(0.5f)).padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = chatText,
+                onValueChange = { if (it.length <= 200) chatText = it },
+                modifier = Modifier.weight(1f),
+                placeholder = { Text("Mafia only...", color = Color.White.copy(0.3f)) },
+                singleLine = true,
+                shape = RoundedCornerShape(20.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = MafiaRed,
+                    unfocusedBorderColor = MafiaRed.copy(0.3f),
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White
+                )
+            )
+            Spacer(Modifier.width(8.dp))
+            FilledIconButton(
+                onClick = { if (chatText.isNotBlank()) { onSendMafiaChat(chatText); chatText = "" } },
+                colors = IconButtonDefaults.filledIconButtonColors(containerColor = MafiaRed)
+            ) { Text("➤", fontSize = 18.sp, color = Color.White) }
+        }
+    }
+}
+
 // ── Arena Tab ─────────────────────────────────────────────────────────────────
 @Composable
 private fun ArenaTab(
@@ -269,34 +368,53 @@ private fun ArenaTab(
     isSpectator: Boolean,
     lastEvent: ServerMessage?,
     mafiaTeammates: List<PlayerPublicInfo>,
-    mafiaChatMessages: List<ChatMessage>,
     mafiaVoteTally: Map<String, Int>,
     mafiaVoteTie: Boolean,
     enableGameHistory: Boolean,
     onNightAction: (String) -> Unit,
     onSendChat: (String) -> Unit,
-    onSendMafiaChat: (String) -> Unit,
     onVote: (String) -> Unit, onSkipVote: () -> Unit,
     onUseVeto: () -> Unit, onLeave: () -> Unit
 ) {
-    when (phase) {
-        GamePhase.ROLE_REVEAL -> RoleRevealContent(myRole)
-        GamePhase.NIGHT -> NightContent(
-            myRole, myPlayerId, alivePlayers, allPlayers,
-            mafiaTeammates, mafiaChatMessages, mafiaVoteTally, mafiaVoteTie,
-            isSpectator, onNightAction, onSendMafiaChat, eventLog, enableGameHistory
-        )
-        GamePhase.NIGHT_RESULT -> NightResultContent(nightSummary, isSpectator, eventLog, enableGameHistory)
-        GamePhase.DISCUSSION -> DiscussionArenaContent(myRole, detectiveResult, alivePlayers, allPlayers, eventLog, enableGameHistory, onSendChat)
-        GamePhase.VOTING -> VotingContent(myRole, myPlayerId, alivePlayers, voteTally, voteLog, ministerVetoUsed, eventLog, enableGameHistory, onVote, onSkipVote, onUseVeto)
-        GamePhase.ELIMINATION -> EliminationContent(voteResult, voteLog, isSpectator, eventLog, enableGameHistory)
-        GamePhase.GAME_OVER -> GameOverContent(lastEvent, allPlayers, onLeave)
-        else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(phase.description, color = Color.White.copy(0.6f), textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp))
-                if (eventLog.isNotEmpty()) {
-                    Spacer(Modifier.height(24.dp))
-                    GameHistorySection(eventLog, enableGameHistory)
+    Column(Modifier.fillMaxSize()) {
+        // Persistent mafia teammates strip — visible across all phases for mafia players
+        if (myRole?.isMafia() == true && mafiaTeammates.isNotEmpty()) {
+            Surface(color = MafiaRed.copy(0.12f), modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("🩸 Team:", fontSize = 11.sp, color = MafiaRed.copy(0.8f), fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.width(8.dp))
+                    mafiaTeammates.forEach { tm ->
+                        Surface(color = MafiaRed.copy(0.2f), shape = RoundedCornerShape(6.dp), modifier = Modifier.padding(end = 6.dp)) {
+                            Text("${tm.avatarEmoji} ${tm.name}", Modifier.padding(horizontal = 8.dp, vertical = 3.dp), fontSize = 11.sp, color = Color.White)
+                        }
+                    }
+                }
+            }
+        }
+        Box(Modifier.weight(1f)) {
+            when (phase) {
+                GamePhase.ROLE_REVEAL -> RoleRevealContent(myRole)
+                GamePhase.NIGHT -> NightContent(
+                    myRole, myPlayerId, alivePlayers, allPlayers,
+                    mafiaTeammates, mafiaVoteTally, mafiaVoteTie,
+                    isSpectator, onNightAction, eventLog, enableGameHistory
+                )
+                GamePhase.NIGHT_RESULT -> NightResultContent(nightSummary, isSpectator, eventLog, enableGameHistory)
+                GamePhase.DISCUSSION -> DiscussionArenaContent(myRole, detectiveResult, alivePlayers, allPlayers, eventLog, enableGameHistory, onSendChat)
+                GamePhase.VOTING -> VotingContent(myRole, myPlayerId, alivePlayers, voteTally, voteLog, ministerVetoUsed, eventLog, enableGameHistory, onVote, onSkipVote, onUseVeto)
+                GamePhase.ELIMINATION -> EliminationContent(voteResult, voteLog, isSpectator, eventLog, enableGameHistory)
+                GamePhase.GAME_OVER -> GameOverContent(lastEvent, allPlayers, onLeave)
+                else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(phase.description, color = Color.White.copy(0.6f), textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp))
+                        if (eventLog.isNotEmpty()) {
+                            Spacer(Modifier.height(24.dp))
+                            GameHistorySection(eventLog, enableGameHistory)
+                        }
+                    }
                 }
             }
         }
@@ -325,12 +443,10 @@ private fun NightContent(
     alivePlayers: List<PlayerPublicInfo>,
     allPlayers: List<PlayerPublicInfo>,
     mafiaTeammates: List<PlayerPublicInfo>,
-    mafiaChatMessages: List<ChatMessage>,
     mafiaVoteTally: Map<String, Int>,
     mafiaVoteTie: Boolean,
     isSpectator: Boolean,
     onNightAction: (String) -> Unit,
-    onSendMafiaChat: (String) -> Unit,
     eventLog: List<GameEvent>,
     enableGameHistory: Boolean
 ) {
@@ -346,10 +462,6 @@ private fun NightContent(
     else
         alivePlayers.filter { it.id != myPlayerId }
     val deadPlayers = allPlayers.filter { p -> alivePlayers.none { it.id == p.id } }
-    var mafiaText by remember { mutableStateOf("") }
-    var showMafiaChat by remember { mutableStateOf(true) }
-    val mafiaChatListState = rememberLazyListState()
-    LaunchedEffect(mafiaChatMessages.size) { if (mafiaChatMessages.isNotEmpty()) mafiaChatListState.animateScrollToItem(mafiaChatMessages.size - 1) }
 
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         item {
@@ -366,24 +478,6 @@ private fun NightContent(
             }
             val instrColor = if (mafiaVoteTie) MafiaRed else if (isSpectator) DeadGray else MafiaPurple.copy(0.8f)
             Text(instr, fontSize = 14.sp, color = instrColor, textAlign = TextAlign.Center, fontWeight = if (mafiaVoteTie) FontWeight.Bold else FontWeight.Normal)
-        }
-
-        // Mafia teammates strip
-        if (isMafia && mafiaTeammates.isNotEmpty()) {
-            item {
-                Spacer(Modifier.height(10.dp))
-                Surface(color = MafiaRed.copy(0.12f), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
-                    Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("🩸 Team:", fontSize = 12.sp, color = MafiaRed.copy(0.8f), fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.width(8.dp))
-                        mafiaTeammates.forEach { tm ->
-                            Surface(color = MafiaRed.copy(0.2f), shape = RoundedCornerShape(6.dp), modifier = Modifier.padding(end = 6.dp)) {
-                                Text("${tm.avatarEmoji} ${tm.name}", Modifier.padding(horizontal = 8.dp, vertical = 3.dp), fontSize = 12.sp, color = Color.White)
-                            }
-                        }
-                    }
-                }
-            }
         }
 
         // Target list
@@ -425,56 +519,6 @@ private fun NightContent(
                 if (voted && !isMafia) {
                     Spacer(Modifier.height(6.dp))
                     Text("✓ Action submitted", color = TownGreen, fontSize = 13.sp)
-                }
-            }
-        }
-
-        // Mafia private chat
-        if (isMafia && !isSpectator) {
-            item {
-                Spacer(Modifier.height(16.dp))
-                Surface(color = MafiaRed.copy(0.08f), shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp)) {
-                        Row(Modifier.fillMaxWidth().clickable { showMafiaChat = !showMafiaChat }, verticalAlignment = Alignment.CenterVertically) {
-                            Text("🔴 Mafia Chat", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MafiaRed, modifier = Modifier.weight(1f))
-                            Text(if (showMafiaChat) "▲" else "▼", fontSize = 10.sp, color = Color.White.copy(0.4f))
-                        }
-                        if (showMafiaChat) {
-                            Spacer(Modifier.height(8.dp))
-                            if (mafiaChatMessages.isEmpty()) {
-                                Text("No messages yet...", fontSize = 12.sp, color = Color.White.copy(0.3f))
-                            } else {
-                                mafiaChatMessages.takeLast(8).forEach { msg ->
-                                    val isMine = msg.senderId == myPlayerId
-                                    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = if (isMine) Arrangement.End else Arrangement.Start) {
-                                        Surface(color = if (isMine) MafiaRed.copy(0.35f) else Color.White.copy(0.1f), shape = RoundedCornerShape(10.dp)) {
-                                            Column(Modifier.padding(8.dp).widthIn(max = 220.dp)) {
-                                                if (!isMine) Text(msg.senderName, fontSize = 10.sp, color = MafiaRed, fontWeight = FontWeight.SemiBold)
-                                                Text(msg.text, fontSize = 13.sp, color = Color.White)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                OutlinedTextField(
-                                    value = mafiaText,
-                                    onValueChange = { if (it.length <= 200) mafiaText = it },
-                                    modifier = Modifier.weight(1f),
-                                    placeholder = { Text("Mafia only...", color = Color.White.copy(0.3f), fontSize = 13.sp) },
-                                    singleLine = true,
-                                    shape = RoundedCornerShape(16.dp),
-                                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = MafiaRed, unfocusedBorderColor = MafiaRed.copy(0.3f), focusedTextColor = Color.White, unfocusedTextColor = Color.White)
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                FilledIconButton(
-                                    onClick = { if (mafiaText.isNotBlank()) { onSendMafiaChat(mafiaText); mafiaText = "" } },
-                                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = MafiaRed)
-                                ) { Text("➤", fontSize = 16.sp, color = Color.White) }
-                            }
-                        }
-                    }
                 }
             }
         }
