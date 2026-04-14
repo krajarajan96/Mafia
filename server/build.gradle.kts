@@ -1,7 +1,7 @@
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.kotlinSerialization)
-    alias(libs.plugins.ktor)
+    alias(libs.plugins.shadow)
     application
 }
 
@@ -33,4 +33,12 @@ kotlin {
 }
 
 application { mainClass.set("com.mafia.server.ApplicationKt") }
-ktor { fatJar { archiveFileName.set("mafia-server.jar") } }
+
+tasks.shadowJar {
+    archiveFileName.set("mafia-server.jar")
+    manifest { attributes["Main-Class"] = "com.mafia.server.ApplicationKt" }
+    mergeServiceFiles()
+    // KMP compiles to jvmRuntimeClasspath, not the default runtimeClasspath
+    configurations = listOf(project.configurations["jvmRuntimeClasspath"])
+    from(kotlin.jvm().compilations["main"].output.allOutputs)
+}

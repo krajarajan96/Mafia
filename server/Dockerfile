@@ -1,7 +1,7 @@
 FROM gradle:8.10-jdk17 AS build
 WORKDIR /app
 COPY . .
-RUN gradle :server:buildFatJar --no-daemon
+RUN gradle :server:shadowJar --no-daemon
 
 FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
