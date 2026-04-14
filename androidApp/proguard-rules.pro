@@ -11,6 +11,10 @@
     kotlinx.serialization.KSerializer serializer(...);
 }
 
+# SLF4J / Logback (server-side logging pulled in transitively — not used on Android)
+-dontwarn org.slf4j.**
+-dontwarn ch.qos.logback.**
+
 # Ktor
 -keep class io.ktor.** { *; }
 -keep class kotlinx.coroutines.** { *; }
