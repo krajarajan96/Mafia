@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "134001310501",
+    "project_id": "mafia-bf95e",
+    "storage_bucket": "mafia-bf95e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:134001310501:android:b3050f606f4eae40bb38cc",
+        "android_client_info": {
+          "package_name": "com.mafiasd.android"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDPracWc-ruLZOUyLfATScMrMFYWuZ88EQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
