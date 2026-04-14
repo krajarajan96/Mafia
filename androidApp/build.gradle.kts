@@ -23,7 +23,7 @@ kotlin {
             implementation(libs.androidx.activity.compose)
             implementation(libs.koin.android)
             implementation(libs.koin.compose)
-            implementation(platform(libs.firebase.bom))
+            implementation(project.dependencies.platform(libs.firebase.bom))
             implementation(libs.firebase.crashlytics)
             implementation(libs.firebase.analytics)
         }
@@ -43,7 +43,7 @@ android {
         applicationId = "com.mafiasd.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
+        versionCode = 2
         versionName = "1.0.0"
     }
 
