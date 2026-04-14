@@ -1,6 +1,7 @@
 package com.mafia.server.routes
 
 import com.mafia.server.game.GameSessionManager
+import io.ktor.server.application.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 

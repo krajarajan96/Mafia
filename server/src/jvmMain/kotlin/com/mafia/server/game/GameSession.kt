@@ -31,10 +31,11 @@ class GameSession(
     }
 
     suspend fun removePlayer(playerId: String) {
+        val playerName = state.players.find { it.id == playerId }?.name ?: ""
         connections.remove(playerId)
         state = state.copy(players = state.players.filter { it.id != playerId })
         room = room.copy(players = state.players.map { PlayerPublicInfo.from(it) })
-        broadcastAll(ServerMessage.PlayerLeft(playerId))
+        broadcastAll(ServerMessage.PlayerLeft(playerId, playerName))
     }
 
     fun getConnection(playerId: String): WebSocketSession? = connections[playerId]
