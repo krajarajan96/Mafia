@@ -1,6 +1,9 @@
 package com.mafia.server.game
 
+import com.mafia.server.ai.GroqClient
+import com.mafia.server.ai.GroqGameAI
 import com.mafia.shared.model.*
+import io.ktor.client.*
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -9,11 +12,19 @@ class GameSessionManager {
     private val codeToRoom = ConcurrentHashMap<String, String>()
     private val playerToRoom = ConcurrentHashMap<String, String>()
 
+    // Shared HTTP client and Groq AI — instantiated once, reused across all sessions.
+    private val httpClient = HttpClient()
+    private val groqAI: GroqGameAI? = run {
+        val key = System.getenv("GROQ_API_KEY")
+        if (!key.isNullOrBlank()) GroqGameAI(GroqClient(key, httpClient))
+        else null
+    }
+
     fun createRoom(mode: GameMode, settings: GameSettings = GameSettings()): GameSession {
         val roomId = UUID.randomUUID().toString()
         var code = generateRoomCode()
         while (codeToRoom.containsKey(code)) { code = generateRoomCode() }
-        val session = GameSession(roomId, code, mode, AIPlayerController())
+        val session = GameSession(roomId, code, mode, AIPlayerController(groqAI))
         sessions[roomId] = session; codeToRoom[code] = roomId
         return session
     }
