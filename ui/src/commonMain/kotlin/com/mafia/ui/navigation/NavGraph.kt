@@ -15,7 +15,7 @@ import kotlinx.coroutines.launch
 
 sealed class Screen {
     data object Home : Screen()
-    data class Lobby(val isMultiplayer: Boolean) : Screen()
+    data object Lobby : Screen()
     data object WaitingRoom : Screen()
     data object Game : Screen()
     data object HowToPlay : Screen()
@@ -65,24 +65,19 @@ fun MafiaApp(repository: GameRepository) {
 
     MafiaTheme(darkTheme = true) {
         Box(Modifier.fillMaxSize().safeDrawingPadding()) {
-            when (val screen = currentScreen) {
+            when (currentScreen) {
                 is Screen.Home -> HomeScreen(
-                    onSinglePlayer = { currentScreen = Screen.Lobby(false) },
-                    onMultiplayer = { currentScreen = Screen.Lobby(true) },
+                    onPlay = { currentScreen = Screen.Lobby },
                     onHowToPlay = { currentScreen = Screen.HowToPlay }
                 )
                 is Screen.Lobby -> {
                     BackHandlerEffect { currentScreen = Screen.Home }
-                    LobbyScreen(screen.isMultiplayer,
-                        onCreateRoom = { n, e, m ->
-                            if (m == GameMode.SINGLE_PLAYER) {
-                                repository.prepareLocalGame(n, e)
-                                currentScreen = Screen.WaitingRoom
-                            } else scope.launch { repository.createRoom(m, n, e) }
-                        },
+                    LobbyScreen(
+                        onCreateRoom = { n, e -> scope.launch { repository.createRoom(GameMode.MULTIPLAYER, n, e) } },
                         onJoinRoom = { c, n, e -> scope.launch { repository.joinRoom(c, n, e) } },
                         onJoinAsSpectator = { c, n, e -> scope.launch { repository.joinAsSpectator(c, n, e) } },
-                        onBack = { currentScreen = Screen.Home })
+                        onBack = { currentScreen = Screen.Home }
+                    )
                 }
                 is Screen.WaitingRoom -> {
                     BackHandlerEffect { repository.leaveRoom(); currentScreen = Screen.Home }
@@ -96,7 +91,6 @@ fun MafiaApp(repository: GameRepository) {
                     } }
                 }
                 is Screen.Game -> {
-                    // Intercept back press during game — do nothing (use Leave button instead)
                     BackHandlerEffect {}
                     GameScreen(
                         phase, round, myRole, myPlayerId, alivePlayers, chatMessages, timer,
@@ -120,6 +114,6 @@ fun MafiaApp(repository: GameRepository) {
                     HowToPlayScreen(onBack = { currentScreen = Screen.Home })
                 }
             }
-        } // Box
+        }
     }
 }

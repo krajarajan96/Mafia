@@ -96,8 +96,8 @@ class GameSession(
     suspend fun startGame() {
         if (gameStarted) return
         gameStarted = true
-        if (room.settings.allowAIFill && state.players.size < room.minPlayers) {
-            val needed = room.minPlayers - state.players.size
+        if (room.settings.allowAIFill && state.players.size < room.settings.maxPlayers) {
+            val needed = room.settings.maxPlayers - state.players.size
             state = state.copy(players = state.players + AI_PERSONALITIES.shuffled().take(needed))
             room = room.copy(players = state.players.map { PlayerPublicInfo.from(it) })
         }
@@ -229,7 +229,7 @@ class GameSession(
     }
 
     fun updateSettings(settings: GameSettings) {
-        room = room.copy(settings = settings)
+        room = room.copy(settings = settings, maxPlayers = settings.maxPlayers)
         broadcastAll(ServerMessage.SettingsUpdated(settings))
     }
 

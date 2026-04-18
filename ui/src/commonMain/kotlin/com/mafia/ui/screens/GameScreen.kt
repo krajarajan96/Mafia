@@ -414,11 +414,11 @@ private fun ArenaTab(
                 GamePhase.NIGHT -> NightContent(
                     myRole, myPlayerId, alivePlayers, allPlayers,
                     mafiaTeammates, mafiaVoteTally, mafiaVoteTie,
-                    isSpectator, onNightAction, eventLog, enableGameHistory
+                    isSpectator, onNightAction, eventLog, enableGameHistory, round
                 )
                 GamePhase.NIGHT_RESULT -> NightResultContent(nightSummary, isSpectator, eventLog, enableGameHistory)
                 GamePhase.DISCUSSION -> DiscussionArenaContent(myRole, detectiveResult, alivePlayers, allPlayers, eventLog, enableGameHistory, onSendChat)
-                GamePhase.VOTING -> VotingContent(myRole, myPlayerId, alivePlayers, voteTally, voteLog, ministerVetoUsed, eventLog, enableGameHistory, onVote, onSkipVote, onUseVeto)
+                GamePhase.VOTING -> VotingContent(myRole, myPlayerId, alivePlayers, voteTally, voteLog, ministerVetoUsed, eventLog, enableGameHistory, onVote, onSkipVote, onUseVeto, round)
                 GamePhase.ELIMINATION -> EliminationContent(voteResult, voteLog, isSpectator, eventLog, enableGameHistory)
                 GamePhase.GAME_OVER -> GameOverContent(
                     lastEvent, allPlayers, myPlayerId, myRole,
@@ -443,14 +443,55 @@ private fun ArenaTab(
 
 @Composable
 private fun RoleRevealContent(myRole: Role?) {
+    val isMafia = myRole?.isMafia() == true
+    val roleColor = if (isMafia) MafiaRed else TownGreen
+    val winCondition = if (isMafia)
+        "Win by eliminating enough Town members to equal your count."
+    else when (myRole) {
+        Role.DETECTIVE -> "Win when all Mafia are eliminated. Use your investigation wisely."
+        Role.DOCTOR -> "Win when all Mafia are eliminated. Your saves can turn the game."
+        Role.VIGILANTE -> "Win when all Mafia are eliminated — but beware shooting innocents."
+        Role.ESCORT -> "Win when all Mafia are eliminated. Blocking the right person is key."
+        Role.MINISTER -> "Win when all Mafia are eliminated. Save your veto for the right moment."
+        else -> "Win when all Mafia are eliminated. Find them through discussion and voting."
+    }
+    val nightTip = when (myRole) {
+        Role.MAFIA -> "Tonight: vote with your team to choose who to eliminate."
+        Role.DETECTIVE -> "Tonight: tap a player to investigate — you'll see if they're Mafia."
+        Role.DOCTOR -> "Tonight: tap a player to protect them from elimination."
+        Role.VIGILANTE -> "Tonight: you may shoot one player. Innocent target = you both die."
+        Role.ESCORT -> "Tonight: tap a player to block their night action."
+        else -> null
+    }
+
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(24.dp)) {
             Text(myRole?.emoji ?: "?", fontSize = 80.sp)
             Spacer(Modifier.height(16.dp))
             Text("You are", fontSize = 16.sp, color = Color.White.copy(0.6f))
-            Text(myRole?.displayName ?: "Unknown", fontSize = 36.sp, fontWeight = FontWeight.Black, color = if (myRole?.isMafia() == true) MafiaRed else TownGreen)
-            Spacer(Modifier.height(8.dp))
-            Text(myRole?.description ?: "", fontSize = 14.sp, color = Color.White.copy(0.7f), textAlign = TextAlign.Center, modifier = Modifier.padding(horizontal = 32.dp))
+            Text(myRole?.displayName ?: "Unknown", fontSize = 36.sp, fontWeight = FontWeight.Black, color = roleColor)
+            Spacer(Modifier.height(4.dp))
+            Surface(color = roleColor.copy(0.18f), shape = RoundedCornerShape(8.dp)) {
+                Text(
+                    if (isMafia) "⚔️ Mafia" else "🏘️ Town",
+                    Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    fontSize = 12.sp, color = roleColor, fontWeight = FontWeight.SemiBold
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            Surface(color = Color.White.copy(0.07f), shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(myRole?.description ?: "", fontSize = 14.sp, color = Color.White.copy(0.85f), textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(10.dp))
+                    HorizontalDivider(color = Color.White.copy(0.1f))
+                    Spacer(Modifier.height(10.dp))
+                    Text("🏆 $winCondition", fontSize = 13.sp, color = roleColor.copy(0.9f), textAlign = TextAlign.Center)
+                    if (nightTip != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("🌙 $nightTip", fontSize = 13.sp, color = Color.White.copy(0.65f), textAlign = TextAlign.Center)
+                    }
+                }
+            }
         }
     }
 }
@@ -466,11 +507,13 @@ private fun NightContent(
     isSpectator: Boolean,
     onNightAction: (String) -> Unit,
     eventLog: List<GameEvent>,
-    enableGameHistory: Boolean
+    enableGameHistory: Boolean,
+    round: Int = 1
 ) {
     val isMafia = myRole?.isMafia() == true
     var selected by remember { mutableStateOf<String?>(null) }
     var voted by remember { mutableStateOf(false) }
+    var showHint by remember { mutableStateOf(round == 1 && !isSpectator) }
     // Reset selection on tie so mafia can re-vote
     LaunchedEffect(mafiaVoteTie) { if (mafiaVoteTie) { selected = null; voted = false } }
     // Mafia teammates IDs (so mafia can't vote for their own teammates)
@@ -482,6 +525,24 @@ private fun NightContent(
     val deadPlayers = allPlayers.filter { p -> alivePlayers.none { it.id == p.id } }
 
     LazyColumn(Modifier.fillMaxSize().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        if (showHint) {
+            item {
+                val hintBody = when (myRole) {
+                    Role.MAFIA -> "Vote with your team to eliminate a Town member. Majority wins — ties force a re-vote."
+                    Role.DETECTIVE -> "Tap a player to investigate. You'll learn if they're Mafia or not."
+                    Role.DOCTOR -> "Tap a player to protect them from elimination tonight."
+                    Role.VIGILANTE -> "You can shoot one player. Shooting an innocent eliminates you too — choose carefully."
+                    Role.ESCORT -> "Tap a player to block their night action."
+                    else -> "You have no night action this round. Wait for dawn."
+                }
+                TutorialBanner(
+                    emoji = myRole?.emoji ?: "🌙",
+                    title = "Night Phase — ${myRole?.displayName ?: "Spectator"}",
+                    body = hintBody,
+                    onDismiss = { showHint = false }
+                )
+            }
+        }
         item {
             Text("🌙 The town sleeps...", fontSize = 18.sp, color = Color.White.copy(0.8f))
             Spacer(Modifier.height(4.dp))
@@ -698,13 +759,29 @@ private fun VotingContent(
     ministerVetoUsed: Boolean,
     eventLog: List<GameEvent>,
     enableGameHistory: Boolean,
-    onVote: (String) -> Unit, onSkipVote: () -> Unit, onUseVeto: () -> Unit
+    onVote: (String) -> Unit, onSkipVote: () -> Unit, onUseVeto: () -> Unit,
+    round: Int = 1
 ) {
     var voted by remember { mutableStateOf(false) }
+    var showHint by remember { mutableStateOf(round == 1) }
     val targets = alivePlayers.filter { it.id != myPlayerId }
     val canVeto = myRole == Role.MINISTER && !ministerVetoUsed && !voted
 
     LazyColumn(Modifier.fillMaxSize()) {
+        if (showHint) {
+            item {
+                val hintBody = if (myRole == Role.MINISTER)
+                    "Majority vote eliminates the suspect. Ties = no elimination. As Minister, you have a one-time Secret Veto to cancel any elimination this game."
+                else
+                    "Majority vote eliminates the suspect. Ties = no elimination. Discuss before you vote!"
+                TutorialBanner(
+                    emoji = "🗳️",
+                    title = "Voting Phase",
+                    body = hintBody,
+                    onDismiss = { showHint = false }
+                )
+            }
+        }
         // Live vote log
         if (voteLog.isNotEmpty()) {
             item {
@@ -908,6 +985,28 @@ private fun GameOverContent(
                 }
                 Spacer(Modifier.height(16.dp))
             }
+        }
+    }
+}
+
+// ── Tutorial Banner ───────────────────────────────────────────────────────────
+@Composable
+private fun TutorialBanner(emoji: String, title: String, body: String, onDismiss: () -> Unit) {
+    Surface(
+        color = Color(0xFF1E1456), shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Column(Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(emoji, fontSize = 22.sp)
+                Spacer(Modifier.width(8.dp))
+                Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.weight(1f))
+                TextButton(onClick = onDismiss, contentPadding = PaddingValues(0.dp)) {
+                    Text("Got it ✓", fontSize = 12.sp, color = MafiaPurple)
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(body, fontSize = 13.sp, color = Color.White.copy(0.75f), lineHeight = 18.sp)
         }
     }
 }
