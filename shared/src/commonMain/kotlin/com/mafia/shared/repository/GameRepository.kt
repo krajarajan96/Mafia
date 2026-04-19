@@ -328,7 +328,7 @@ class GameRepository(
     private suspend fun runLocalGame(playerName: String, playerEmoji: String) {
         val humanId = "local_player"
         val human = Player(id = humanId, name = playerName, avatarEmoji = playerEmoji, isHost = true)
-        val bots = AI_PERSONALITIES.shuffled().take(localSettings.botCount)
+        val bots = AI_PERSONALITIES.shuffled().take((localSettings.maxPlayers - 1).coerceAtLeast(0))
         val allPlayers = engine.assignRoles(listOf(human) + bots, localSettings)
 
         localState = GameState(roomId = "local", players = allPlayers, round = 0)
