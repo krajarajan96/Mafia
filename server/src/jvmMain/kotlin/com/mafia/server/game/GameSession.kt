@@ -20,6 +20,7 @@ class GameSession(
     var state = GameState(roomId = roomId); private set
     var room = Room(id = roomId, code = roomCode, hostId = "", mode = mode); private set
     private var phaseTimerJob: Job? = null
+    private var discussionChatJob: Job? = null
     private val resolveMutex = Mutex()
     private var gameStarted = false
     private val rematchReady = mutableSetOf<String>()
@@ -116,6 +117,7 @@ class GameSession(
 
     private suspend fun transitionTo(phase: GamePhase) {
         phaseTimerJob?.cancel()
+        discussionChatJob?.cancel()
         state = when (phase) {
             GamePhase.NIGHT -> state.copy(phase = phase, round = state.round + 1, nightActions = NightActions(), votes = emptyMap(), skips = emptySet(), eliminatedThisRound = null)
             GamePhase.DISCUSSION -> state.copy(phase = phase, votes = emptyMap(), skips = emptySet())
@@ -251,7 +253,20 @@ class GameSession(
             val allRoles = state.players.mapNotNull { p -> p.role?.let { r -> p.id to r } }.toMap()
             sendTo(el.id, ServerMessage.EliminatedRolesReveal(allRoles))
         }
-        if (state.winner != null) endGame(state.winner!!) else transitionTo(GamePhase.NIGHT_RESULT)
+        if (state.winner != null) endGame(state.winner!!) else {
+            // Let bots react to the night result before discussion
+            val deadName = eliminated?.name
+            if (deadName != null && aiController != null) {
+                state.alivePlayers.filter { it.isAI }.shuffled().take((1..3).random()).forEachIndexed { i, bot ->
+                    scope.launch {
+                        delay(3000L + i * 2000L)
+                        val reaction = aiController.generateNightReaction(state, bot, deadName)
+                        if (reaction != null) handleChat(bot.id, reaction)
+                    }
+                }
+            }
+            transitionTo(GamePhase.NIGHT_RESULT)
+        }
     }
 
     suspend fun submitVote(voterId: String, targetId: String) {
@@ -306,41 +321,79 @@ class GameSession(
         state = state.copy(chatMessages = state.chatMessages + message)
         broadcastAll(ServerMessage.ChatReceived(message))
 
-        // Trigger reactive AI replies when a human sends a message during Discussion
-        if (state.phase == GamePhase.DISCUSSION && !sender.isAI && aiController != null) {
-            val respondingBots = state.alivePlayers
-                .filter { it.isAI }
-                .shuffled()
-                .take((1..2).random())
-            respondingBots.forEach { bot ->
-                scope.launch {
-                    delay((4000L..10000L).random())
-                    val reply = aiController.generateResponse(state, bot, message)
-                    if (reply != null) handleChat(bot.id, reply)
+        // Trigger reactive AI replies during Discussion — respond to humans always, to bots occasionally
+        if (state.phase == GamePhase.DISCUSSION && aiController != null) {
+            val shouldReact = !sender.isAI || (0..9).random() < 3  // always for humans, 30% for bot→bot
+            if (shouldReact) {
+                val respondingBots = state.alivePlayers
+                    .filter { it.isAI && it.id != senderId }
+                    .shuffled()
+                    .take(if (sender.isAI) 1 else (1..2).random())
+                respondingBots.forEach { bot ->
+                    scope.launch {
+                        delay((2000L..6000L).random())
+                        val reply = aiController.generateResponse(state, bot, message)
+                        if (reply != null && state.phase == GamePhase.DISCUSSION) handleChat(bot.id, reply)
+                    }
                 }
             }
         }
     }
 
     private suspend fun triggerAIActions(phase: GamePhase) {
-        state.alivePlayers.filter { it.isAI }.forEach { player ->
-            scope.launch {
-                delay((1000L..3000L).random())
-                aiController?.let { ai ->
-                    when (phase) {
-                        GamePhase.NIGHT -> {
-                            val target = ai.chooseNightTarget(state, player)
-                            if (target != null) {
-                                if (player.role?.isMafia() == true) submitMafiaVote(player.id, target)
-                                else submitNightAction(player.id, target)
-                            }
+        val bots = state.alivePlayers.filter { it.isAI }
+        when (phase) {
+            GamePhase.NIGHT -> bots.forEach { player ->
+                scope.launch {
+                    delay((1000L..3000L).random())
+                    aiController?.let { ai ->
+                        val target = ai.chooseNightTarget(state, player)
+                        if (target != null) {
+                            if (player.role?.isMafia() == true) submitMafiaVote(player.id, target)
+                            else submitNightAction(player.id, target)
                         }
-                        GamePhase.DISCUSSION -> ai.generateDiscussion(state, player).forEach { msg -> delay((2000L..5000L).random()); handleChat(player.id, msg) }
-                        GamePhase.VOTING -> ai.chooseVoteTarget(state, player)?.let { submitVote(player.id, it) }
-                        else -> {}
                     }
                 }
             }
+            GamePhase.DISCUSSION -> {
+                // Initial burst — each bot sends 1-2 messages staggered at the start
+                bots.forEach { player ->
+                    scope.launch {
+                        delay((2000L..6000L).random())
+                        aiController?.let { ai ->
+                            ai.generateDiscussion(state, player).forEach { msg ->
+                                delay((2000L..4000L).random())
+                                handleChat(player.id, msg)
+                            }
+                        }
+                    }
+                }
+                // Periodic re-engagement: every 15-25s, pick 1-2 bots to say something new
+                if (aiController != null) {
+                    discussionChatJob = scope.launch {
+                        delay(15000L)
+                        while (state.phase == GamePhase.DISCUSSION) {
+                            val activeBots = state.alivePlayers.filter { it.isAI }.shuffled().take((1..2).random())
+                            activeBots.forEach { player ->
+                                scope.launch {
+                                    delay((1000L..4000L).random())
+                                    aiController.generateDiscussion(state, player).take(1).forEach { msg ->
+                                        if (state.phase == GamePhase.DISCUSSION) handleChat(player.id, msg)
+                                    }
+                                }
+                            }
+                            delay((15000L..25000L).random())
+                        }
+                    }
+                }
+            }
+            GamePhase.VOTING -> bots.forEach { player ->
+                scope.launch {
+                    delay((2000L..6000L).random())
+                    aiController?.chooseVoteTarget(state, player)?.let { submitVote(player.id, it) }
+                }
+            }
+            else -> {}
         }
     }
 

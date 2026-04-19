@@ -19,4 +19,7 @@ interface GameAI {
 
     /** Returns a single reactive reply to a specific human chat message, or null to stay silent. */
     suspend fun generateResponse(state: GameState, actor: Player, triggerMessage: ChatMessage): String?
+
+    /** Returns a reaction to the night result (someone was killed), or null to stay silent. */
+    suspend fun generateNightReaction(state: GameState, actor: Player, eliminatedName: String): String?
 }

@@ -31,6 +31,11 @@ class AIPlayerController(private val ai: GameAI? = null) {
         return result ?: heuristicResponse(state, player, triggerMessage)
     }
 
+    suspend fun generateNightReaction(state: GameState, player: Player, eliminatedName: String): String? {
+        val result = ai?.generateNightReaction(state, player, eliminatedName)
+        return result ?: heuristicNightReaction(player, eliminatedName)
+    }
+
     // ── Heuristic fallbacks (used when no AI backend is configured) ──────────
 
     private fun heuristicNightTarget(state: GameState, player: Player): String? {
@@ -67,23 +72,47 @@ class AIPlayerController(private val ai: GameAI? = null) {
         }
     }
 
+    private fun heuristicNightReaction(player: Player, eliminatedName: String): String? {
+        val isMafia = player.role?.isMafia() == true
+        val phrases = if (isMafia) listOf(
+            "Oh no... $eliminatedName is gone",
+            "This is getting intense",
+            "We need to find the Mafia fast",
+            "Poor $eliminatedName... we failed them"
+        ) else listOf(
+            "oh wow, $eliminatedName!! I suspected them honestly",
+            "rip $eliminatedName... now who do we vote?",
+            "did NOT see that coming with $eliminatedName",
+            "Mafia got $eliminatedName... we need to focus",
+            "I had a feeling about $eliminatedName ngl"
+        )
+        return phrases.random()
+    }
+
     private fun heuristicResponse(state: GameState, player: Player, trigger: ChatMessage): String? {
-        // 40% chance to stay silent in heuristic mode
-        if ((0..9).random() < 4) return null
         val isMafia = player.role?.isMafia() == true
         val senderName = trigger.senderName
-        val phrases = if (isMafia) listOf(
+        val isAccused = trigger.text.contains(player.name, ignoreCase = true)
+        // Always reply if accused; otherwise 70% chance
+        if (!isAccused && (0..9).random() < 3) return null
+        val phrases = if (isAccused) listOf(
+            "Woah why are you pointing at me??",
+            "That's not fair, I'm clearly Town",
+            "Classic deflection move right there",
+            "I'm not the one you should worry about",
+            "Really? Me? Look at the others first"
+        ) else if (isMafia) listOf(
             "I don't think it's $senderName tbh",
             "We shouldn't trust $senderName blindly",
-            "That's interesting... suspicious timing though",
+            "Something about $senderName feels off too",
             "Let's focus on the quieter ones",
-            "I'm not so sure about that"
+            "I'm not convinced by $senderName's logic"
         ) else listOf(
-            "Yeah I was thinking the same thing",
-            "Hmm, $senderName makes a fair point",
-            "I don't know, something feels off",
+            "Yeah I was thinking the same",
+            "$senderName has a point actually",
+            "I don't know, something feels off here",
             "Who else has been quiet this round?",
-            "That logic actually makes sense"
+            "That tracks with what I noticed too"
         )
         return phrases.random()
     }
