@@ -197,6 +197,13 @@ fun WaitingRoomScreen(
                                 }
                                 Switch(checked = settings.enableGameHistory, onCheckedChange = { settings = settings.copy(enableGameHistory = it); onUpdateSettings(settings) }, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MafiaPurple))
                             }
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("💡 Phase Tips", fontSize = 14.sp, color = Color.White)
+                                    Text("Show hints at the start of each phase", fontSize = 12.sp, color = Color.White.copy(0.4f))
+                                }
+                                Switch(checked = settings.enableTips, onCheckedChange = { settings = settings.copy(enableTips = it); onUpdateSettings(settings) }, colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = MafiaPurple))
+                            }
                         }
                     }
                 }

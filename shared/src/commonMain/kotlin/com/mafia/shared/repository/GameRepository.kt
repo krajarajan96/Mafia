@@ -69,7 +69,11 @@ class GameRepository(
     val rematchReadyIds: StateFlow<List<String>> = _rematchReadyIds.asStateFlow()
     private val _rematchTotalPlayers = MutableStateFlow(0)
     val rematchTotalPlayers: StateFlow<Int> = _rematchTotalPlayers.asStateFlow()
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
     val connectionState = socket.connectionState
+
+    fun clearError() { _errorMessage.value = null }
 
     // ── Local single-player state ───────────────────────────────────────────
     private var isLocalGame = false
@@ -175,6 +179,7 @@ class GameRepository(
                 _rematchReadyIds.value = emptyList()
                 resetForNewGame()
             }
+            is ServerMessage.Error -> _errorMessage.value = msg.message
             else -> {}
         }
     }

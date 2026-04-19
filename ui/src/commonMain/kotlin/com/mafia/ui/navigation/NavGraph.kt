@@ -1,16 +1,23 @@
 package com.mafia.ui.navigation
 
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.foundation.layout.Box
+import androidx.compose.animation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.mafia.shared.model.*
+import com.mafia.shared.network.GameSocket
 import com.mafia.shared.network.messages.ServerMessage
 import com.mafia.shared.repository.GameRepository
 import com.mafia.ui.BackHandlerEffect
 import com.mafia.ui.screens.*
-import com.mafia.ui.theme.MafiaTheme
+import com.mafia.ui.theme.*
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 sealed class Screen {
@@ -48,10 +55,18 @@ fun MafiaApp(repository: GameRepository) {
     val mafiaVoteTally by repository.mafiaVoteTally.collectAsState()
     val mafiaVoteTie by repository.mafiaVoteTie.collectAsState()
     val enableGameHistory = room?.settings?.enableGameHistory ?: true
+    val enableTips = room?.settings?.enableTips ?: true
     val spectators by repository.spectators.collectAsState()
     val rematchInitiated by repository.rematchInitiated.collectAsState()
     val rematchReadyIds by repository.rematchReadyIds.collectAsState()
     val rematchTotalPlayers by repository.rematchTotalPlayers.collectAsState()
+    val errorMessage by repository.errorMessage.collectAsState()
+    val connectionState by repository.connectionState.collectAsState()
+
+    // Auto-clear error after 4 seconds
+    LaunchedEffect(errorMessage) {
+        if (errorMessage != null) { delay(4000); repository.clearError() }
+    }
 
     LaunchedEffect(Unit) {
         repository.lastEvent.collect { event ->
@@ -66,6 +81,7 @@ fun MafiaApp(repository: GameRepository) {
     MafiaTheme(darkTheme = true) {
         Box(Modifier.fillMaxSize().safeDrawingPadding()) {
             when (currentScreen) {
+
                 is Screen.Home -> HomeScreen(
                     onPlay = { currentScreen = Screen.Lobby },
                     onHowToPlay = { currentScreen = Screen.HowToPlay }
@@ -97,7 +113,7 @@ fun MafiaApp(repository: GameRepository) {
                         voteTally, detectiveResult, nightSummary, voteResult, voteLog,
                         eventLog, ministerVetoUsed, revealedRoles, allPlayers, lastEvent,
                         mafiaTeammates, mafiaChatMessages, mafiaVoteTally, mafiaVoteTie,
-                        enableGameHistory, spectators, rematchInitiated, rematchReadyIds, rematchTotalPlayers,
+                        enableGameHistory, enableTips, spectators, rematchInitiated, rematchReadyIds, rematchTotalPlayers,
                         onNightAction = { repository.submitNightAction(it) },
                         onSendChat = { repository.sendChat(it) },
                         onSendMafiaChat = { repository.sendMafiaChat(it) },
@@ -112,6 +128,64 @@ fun MafiaApp(repository: GameRepository) {
                 is Screen.HowToPlay -> {
                     BackHandlerEffect { currentScreen = Screen.Home }
                     HowToPlayScreen(onBack = { currentScreen = Screen.Home })
+                }
+            }
+
+            // Connection banner — shown when not on Home/Lobby and connection is lost
+            val showConnectionBanner = connectionState != GameSocket.ConnectionState.CONNECTED &&
+                currentScreen !is Screen.Home && currentScreen !is Screen.Lobby
+            AnimatedVisibility(
+                visible = showConnectionBanner,
+                enter = slideInVertically { -it } + fadeIn(),
+                exit = slideOutVertically { -it } + fadeOut(),
+                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth()
+            ) {
+                Surface(color = Color(0xFF2A1500)) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        if (connectionState == GameSocket.ConnectionState.RECONNECTING) {
+                            CircularProgressIndicator(Modifier.size(13.dp), strokeWidth = 2.dp, color = MafiaGold)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Reconnecting...", fontSize = 13.sp, color = MafiaGold)
+                        } else {
+                            Text("⚡ Connection lost", fontSize = 13.sp, color = MafiaRed.copy(0.9f))
+                        }
+                    }
+                }
+            }
+
+            // Error banner — shown for server errors (room not found, room full, etc.)
+            AnimatedVisibility(
+                visible = errorMessage != null,
+                enter = slideInVertically { it } + fadeIn(),
+                exit = slideOutVertically { it } + fadeOut(),
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+            ) {
+                Surface(
+                    color = MafiaRed.copy(0.93f),
+                    shape = RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("⚠️", fontSize = 16.sp)
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            errorMessage ?: "",
+                            fontSize = 14.sp, color = Color.White,
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(
+                            onClick = { repository.clearError() },
+                            contentPadding = PaddingValues(horizontal = 8.dp)
+                        ) {
+                            Text("✕", color = Color.White.copy(0.7f), fontSize = 16.sp)
+                        }
+                    }
                 }
             }
         }
