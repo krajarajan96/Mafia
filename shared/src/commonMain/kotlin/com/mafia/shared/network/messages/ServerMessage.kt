@@ -28,6 +28,11 @@ sealed class ServerMessage {
     @Serializable data class MafiaChatReceived(val message: ChatMessage) : ServerMessage()
     @Serializable data class MafiaVoteUpdate(val voterId: String, val targetId: String, val tally: Map<String, Int>) : ServerMessage()
     @Serializable data class MafiaVoteTie(val tally: Map<String, Int>) : ServerMessage()
+    @Serializable data class SpectatorJoined(val spectator: PlayerPublicInfo) : ServerMessage()
+    @Serializable data class SpectatorLeft(val spectatorId: String) : ServerMessage()
+    @Serializable data class RematchInitiated(val hostId: String) : ServerMessage()
+    @Serializable data class RematchReadyUpdate(val readyPlayerIds: List<String>, val totalPlayers: Int) : ServerMessage()
+    @Serializable data object RematchStarting : ServerMessage()
 
     companion object {
         private val json = Json { ignoreUnknownKeys = true; classDiscriminator = "type" }

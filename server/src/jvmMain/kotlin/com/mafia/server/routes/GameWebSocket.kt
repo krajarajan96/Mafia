@@ -55,6 +55,21 @@ fun Routing.configureGameWebSocket(manager: GameSessionManager) {
                         is ClientMessage.MafiaVote -> currentRoomId?.let { manager.findByRoomId(it) }?.let { s -> playerId?.let { s.submitMafiaVote(it, msg.targetId) } }
                         is ClientMessage.MafiaChat -> currentRoomId?.let { manager.findByRoomId(it) }?.let { s -> playerId?.let { s.handleMafiaChat(it, msg.text) } }
                         is ClientMessage.Accuse -> currentRoomId?.let { manager.findByRoomId(it) }?.let { s -> playerId?.let { s.handleChat(it, "I accuse ${msg.targetId}: ${msg.reason}") } }
+                        is ClientMessage.JoinAsSpectator -> {
+                            val session = manager.findByCode(msg.roomCode)
+                            if (session == null) { send(Frame.Text(ServerMessage.encode(ServerMessage.Error("Room not found")))); continue }
+                            val id = UUID.randomUUID().toString(); playerId = id; currentRoomId = session.roomId
+                            val spectator = Player(id = id, name = msg.playerName, avatarEmoji = msg.emoji, isSpectator = true)
+                            manager.registerPlayer(id, session.roomId)
+                            session.addSpectator(spectator, this)
+                            send(Frame.Text(ServerMessage.encode(ServerMessage.RoomJoined(session.room, id))))
+                        }
+                        is ClientMessage.RematchVote -> {
+                            val session = currentRoomId?.let { manager.findByRoomId(it) } ?: continue
+                            val pid = playerId ?: continue
+                            if (pid == session.room.hostId) session.initiateRematch(pid)
+                            else session.markRematchReady(pid)
+                        }
                         is ClientMessage.LeaveRoom -> { handleDisconnect(manager, playerId, currentRoomId); playerId = null; currentRoomId = null; continue }
                         is ClientMessage.Ready -> {}
                     }

@@ -15,12 +15,14 @@ class GameSession(
 ) {
     private val engine = GameEngine()
     private val connections = ConcurrentHashMap<String, WebSocketSession>()
+    private val spectatorConnections = ConcurrentHashMap<String, Pair<Player, WebSocketSession>>()
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     var state = GameState(roomId = roomId); private set
     var room = Room(id = roomId, code = roomCode, hostId = "", mode = mode); private set
     private var phaseTimerJob: Job? = null
     private val resolveMutex = Mutex()
     private var gameStarted = false
+    private val rematchReady = mutableSetOf<String>()
 
     fun addPlayer(player: Player, session: WebSocketSession): Boolean {
         if (room.isFull || state.phase != GamePhase.LOBBY) return false
@@ -31,6 +33,13 @@ class GameSession(
     }
 
     suspend fun removePlayer(playerId: String) {
+        // Check if spectator first
+        if (spectatorConnections.containsKey(playerId)) {
+            spectatorConnections.remove(playerId)
+            room = room.copy(spectators = spectatorConnections.values.map { PlayerPublicInfo.from(it.first) })
+            broadcastAll(ServerMessage.SpectatorLeft(playerId))
+            return
+        }
         val playerName = state.players.find { it.id == playerId }?.name ?: ""
         connections.remove(playerId)
         state = state.copy(players = state.players.filter { it.id != playerId })
@@ -38,13 +47,57 @@ class GameSession(
         broadcastAll(ServerMessage.PlayerLeft(playerId, playerName))
     }
 
+    suspend fun addSpectator(player: Player, session: WebSocketSession) {
+        val spectator = player.copy(isSpectator = true)
+        spectatorConnections[spectator.id] = Pair(spectator, session)
+        room = room.copy(spectators = spectatorConnections.values.map { PlayerPublicInfo.from(it.first) })
+        broadcastAll(ServerMessage.SpectatorJoined(PlayerPublicInfo.from(spectator)))
+        // Send current game state to spectator
+        session.send(Frame.Text(ServerMessage.encode(ServerMessage.RoomUpdate(room))))
+        if (state.phase != GamePhase.LOBBY) {
+            session.send(Frame.Text(ServerMessage.encode(
+                ServerMessage.PhaseChanged(state.phase, state.round, 0, state.alivePlayers.map { PlayerPublicInfo.from(it) })
+            )))
+        }
+    }
+
+    suspend fun initiateRematch(hostId: String) {
+        if (hostId != room.hostId || state.phase != GamePhase.GAME_OVER) return
+        rematchReady.clear()
+        rematchReady.add(hostId)
+        broadcastAll(ServerMessage.RematchInitiated(hostId))
+        broadcastAll(ServerMessage.RematchReadyUpdate(rematchReady.toList(), connections.size))
+    }
+
+    suspend fun markRematchReady(playerId: String) {
+        if (state.phase != GamePhase.GAME_OVER) return
+        rematchReady.add(playerId)
+        broadcastAll(ServerMessage.RematchReadyUpdate(rematchReady.toList(), connections.size))
+        if (rematchReady.size >= connections.size) {
+            startRematch()
+        }
+    }
+
+    private suspend fun startRematch() {
+        phaseTimerJob?.cancel()
+        broadcastAll(ServerMessage.RematchStarting)
+        rematchReady.clear()
+        // Keep spectators but clear game state
+        val humanPlayers = state.players.filter { !it.isAI }.map { it.copy(role = null, isAlive = true) }
+        state = GameState(roomId = roomId, players = humanPlayers)
+        room = room.copy(status = RoomStatus.WAITING, players = humanPlayers.map { PlayerPublicInfo.from(it) })
+        gameStarted = false
+        delay(1000)
+        startGame()
+    }
+
     fun getConnection(playerId: String): WebSocketSession? = connections[playerId]
 
     suspend fun startGame() {
         if (gameStarted) return
         gameStarted = true
-        if (room.settings.allowAIFill && state.players.size < room.minPlayers) {
-            val needed = room.minPlayers - state.players.size
+        if (room.settings.allowAIFill && state.players.size < room.settings.maxPlayers) {
+            val needed = room.settings.maxPlayers - state.players.size
             state = state.copy(players = state.players + AI_PERSONALITIES.shuffled().take(needed))
             room = room.copy(players = state.players.map { PlayerPublicInfo.from(it) })
         }
@@ -176,7 +229,7 @@ class GameSession(
     }
 
     fun updateSettings(settings: GameSettings) {
-        room = room.copy(settings = settings)
+        room = room.copy(settings = settings, maxPlayers = settings.maxPlayers)
         broadcastAll(ServerMessage.SettingsUpdated(settings))
     }
 
@@ -276,6 +329,7 @@ class GameSession(
     private fun broadcastAll(message: ServerMessage) {
         val encoded = ServerMessage.encode(message)
         connections.forEach { (_, s) -> scope.launch { try { s.send(Frame.Text(encoded)) } catch (_: Exception) {} } }
+        spectatorConnections.forEach { (_, pair) -> scope.launch { try { pair.second.send(Frame.Text(encoded)) } catch (_: Exception) {} } }
     }
 
     private fun broadcastToMafia(message: ServerMessage) {

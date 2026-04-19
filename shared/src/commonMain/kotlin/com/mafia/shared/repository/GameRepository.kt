@@ -61,7 +61,19 @@ class GameRepository(
     /** All players who started the game — never cleared mid-game; used for name lookups after elimination. */
     private val _allPlayers = MutableStateFlow<List<PlayerPublicInfo>>(emptyList())
     val allPlayers: StateFlow<List<PlayerPublicInfo>> = _allPlayers.asStateFlow()
+    private val _spectators = MutableStateFlow<List<PlayerPublicInfo>>(emptyList())
+    val spectators: StateFlow<List<PlayerPublicInfo>> = _spectators.asStateFlow()
+    private val _rematchInitiated = MutableStateFlow(false)
+    val rematchInitiated: StateFlow<Boolean> = _rematchInitiated.asStateFlow()
+    private val _rematchReadyIds = MutableStateFlow<List<String>>(emptyList())
+    val rematchReadyIds: StateFlow<List<String>> = _rematchReadyIds.asStateFlow()
+    private val _rematchTotalPlayers = MutableStateFlow(0)
+    val rematchTotalPlayers: StateFlow<Int> = _rematchTotalPlayers.asStateFlow()
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
     val connectionState = socket.connectionState
+
+    fun clearError() { _errorMessage.value = null }
 
     // ── Local single-player state ───────────────────────────────────────────
     private var isLocalGame = false
@@ -152,6 +164,22 @@ class GameRepository(
             }
             is ServerMessage.GameOver -> _phase.value = GamePhase.GAME_OVER
             is ServerMessage.SettingsUpdated -> _room.value = _room.value?.copy(settings = msg.settings)
+            is ServerMessage.SpectatorJoined -> _spectators.value = _spectators.value + msg.spectator
+            is ServerMessage.SpectatorLeft -> _spectators.value = _spectators.value.filter { it.id != msg.spectatorId }
+            is ServerMessage.RematchInitiated -> {
+                _rematchInitiated.value = true
+                _rematchReadyIds.value = listOf(msg.hostId)
+            }
+            is ServerMessage.RematchReadyUpdate -> {
+                _rematchReadyIds.value = msg.readyPlayerIds
+                _rematchTotalPlayers.value = msg.totalPlayers
+            }
+            is ServerMessage.RematchStarting -> {
+                _rematchInitiated.value = false
+                _rematchReadyIds.value = emptyList()
+                resetForNewGame()
+            }
+            is ServerMessage.Error -> _errorMessage.value = msg.message
             else -> {}
         }
     }
@@ -240,6 +268,13 @@ class GameRepository(
         }
     }
 
+    fun joinAsSpectator(code: String, name: String, emoji: String = "👁️") =
+        socket.send(ClientMessage.JoinAsSpectator(code, name, emoji))
+
+    fun initiateRematch() = socket.send(ClientMessage.RematchVote(true))
+
+    fun markRematchReady() = socket.send(ClientMessage.RematchVote(true))
+
     fun updateSettings(settings: GameSettings) {
         if (isLocalGame) localSettings = settings
         else socket.send(ClientMessage.UpdateSettings(settings))
@@ -266,6 +301,8 @@ class GameRepository(
         _nightSummary.value = null; _voteResult.value = null; _voteLog.value = emptyList()
         _round.value = 0; _alivePlayers.value = emptyList(); _allPlayers.value = emptyList()
         _eventLog.value = emptyList(); _ministerVetoUsed.value = false; _revealedRoles.value = emptyMap()
+        _spectators.value = emptyList(); _rematchInitiated.value = false
+        _rematchReadyIds.value = emptyList(); _rematchTotalPlayers.value = 0
     }
 
     // ── Local single-player game loop ───────────────────────────────────────
@@ -291,7 +328,7 @@ class GameRepository(
     private suspend fun runLocalGame(playerName: String, playerEmoji: String) {
         val humanId = "local_player"
         val human = Player(id = humanId, name = playerName, avatarEmoji = playerEmoji, isHost = true)
-        val bots = AI_PERSONALITIES.shuffled().take(localSettings.botCount)
+        val bots = AI_PERSONALITIES.shuffled().take((localSettings.maxPlayers - 1).coerceAtLeast(0))
         val allPlayers = engine.assignRoles(listOf(human) + bots, localSettings)
 
         localState = GameState(roomId = "local", players = allPlayers, round = 0)
