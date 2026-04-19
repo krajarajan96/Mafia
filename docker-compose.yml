@@ -4,7 +4,7 @@ services:
     build: { context: ., dockerfile: server/Dockerfile }
     ports: ["8080:8080"]
     environment:
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
       - DATABASE_URL=jdbc:postgresql://db:5432/mafia
       - DATABASE_USER=mafia
       - DATABASE_PASSWORD=mafia_secret
