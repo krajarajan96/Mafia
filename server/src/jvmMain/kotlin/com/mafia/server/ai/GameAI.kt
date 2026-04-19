@@ -16,4 +16,7 @@ interface GameAI {
 
     /** Returns a list of chat messages to send during the discussion phase, or null to use fallback. */
     suspend fun generateDiscussion(state: GameState, actor: Player): List<String>?
+
+    /** Returns a single reactive reply to a specific human chat message, or null to stay silent. */
+    suspend fun generateResponse(state: GameState, actor: Player, triggerMessage: ChatMessage): String?
 }

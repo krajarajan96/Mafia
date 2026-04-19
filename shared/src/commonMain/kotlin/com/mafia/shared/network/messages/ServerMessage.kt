@@ -33,6 +33,8 @@ sealed class ServerMessage {
     @Serializable data class RematchInitiated(val hostId: String) : ServerMessage()
     @Serializable data class RematchReadyUpdate(val readyPlayerIds: List<String>, val totalPlayers: Int) : ServerMessage()
     @Serializable data object RematchStarting : ServerMessage()
+    /** Sent privately to a player when they are eliminated so they can see all remaining roles. */
+    @Serializable data class EliminatedRolesReveal(val allRoles: Map<String, Role>) : ServerMessage()
 
     companion object {
         private val json = Json { ignoreUnknownKeys = true; classDiscriminator = "type" }

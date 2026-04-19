@@ -144,11 +144,11 @@ class GameSession(
         when (phase) {
             GamePhase.ROLE_REVEAL -> transitionTo(GamePhase.NIGHT)
             GamePhase.NIGHT -> {
-                // If mafia votes are tied, pick random from tied targets before resolving
-                if (state.nightActions.mafiaVotes.isNotEmpty() && state.nightActions.resolvedMafiaTarget() == null) {
+                // Mafia MUST kill every night — force a random target if they didn't vote or tied
+                if (state.nightActions.mafiaVotes.isEmpty() || state.nightActions.resolvedMafiaTarget() == null) {
                     val randomTarget = engine.pickRandomMafiaTarget(state)
                     if (randomTarget != null) {
-                        state = state.copy(nightActions = state.nightActions.copy(mafiaVotes = mapOf("resolved" to randomTarget)))
+                        state = state.copy(nightActions = state.nightActions.copy(mafiaVotes = mapOf("forced" to randomTarget)))
                     }
                 }
                 resolveNight()
@@ -246,6 +246,11 @@ class GameSession(
             vigilanteKilled?.let { PlayerPublicInfo.from(it) },
             vigilanteElim?.let { PlayerPublicInfo.from(it) }
         ))
+        // Privately reveal all roles to the eliminated player so they can spectate with full info
+        eliminated?.let { el ->
+            val allRoles = state.players.mapNotNull { p -> p.role?.let { r -> p.id to r } }.toMap()
+            sendTo(el.id, ServerMessage.EliminatedRolesReveal(allRoles))
+        }
         if (state.winner != null) endGame(state.winner!!) else transitionTo(GamePhase.NIGHT_RESULT)
     }
 
@@ -281,6 +286,11 @@ class GameSession(
             if (room.settings.revealRoleOnDeath) eliminated?.role else null,
             eliminatedId == null, tally
         ))
+        // Privately reveal all roles to the eliminated player so they can spectate with full info
+        eliminated?.let { el ->
+            val allRoles = state.players.mapNotNull { p -> p.role?.let { r -> p.id to r } }.toMap()
+            sendTo(el.id, ServerMessage.EliminatedRolesReveal(allRoles))
+        }
         if (state.winner != null) endGame(state.winner!!) else transitionTo(GamePhase.ELIMINATION)
     }
 
@@ -295,6 +305,21 @@ class GameSession(
         )
         state = state.copy(chatMessages = state.chatMessages + message)
         broadcastAll(ServerMessage.ChatReceived(message))
+
+        // Trigger reactive AI replies when a human sends a message during Discussion
+        if (state.phase == GamePhase.DISCUSSION && !sender.isAI && aiController != null) {
+            val respondingBots = state.alivePlayers
+                .filter { it.isAI }
+                .shuffled()
+                .take((1..2).random())
+            respondingBots.forEach { bot ->
+                scope.launch {
+                    delay((4000L..10000L).random())
+                    val reply = aiController.generateResponse(state, bot, message)
+                    if (reply != null) handleChat(bot.id, reply)
+                }
+            }
+        }
     }
 
     private suspend fun triggerAIActions(phase: GamePhase) {

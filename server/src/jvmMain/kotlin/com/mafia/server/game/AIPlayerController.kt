@@ -25,6 +25,12 @@ class AIPlayerController(private val ai: GameAI? = null) {
     suspend fun chooseVoteTarget(state: GameState, player: Player): String? =
         ai?.chooseVoteTarget(state, player) ?: heuristicVoteTarget(state, player)
 
+    suspend fun generateResponse(state: GameState, player: Player, triggerMessage: ChatMessage): String? {
+        val result = ai?.generateResponse(state, player, triggerMessage)
+        if (result == null && ai != null) log.info("Groq response fallback for ${player.name}")
+        return result ?: heuristicResponse(state, player, triggerMessage)
+    }
+
     // ── Heuristic fallbacks (used when no AI backend is configured) ──────────
 
     private fun heuristicNightTarget(state: GameState, player: Player): String? {
@@ -59,6 +65,27 @@ class AIPlayerController(private val ai: GameAI? = null) {
             }
             else -> getMostAccused(state).firstOrNull { id -> targets.any { it.id == id } } ?: targets.random().id
         }
+    }
+
+    private fun heuristicResponse(state: GameState, player: Player, trigger: ChatMessage): String? {
+        // 40% chance to stay silent in heuristic mode
+        if ((0..9).random() < 4) return null
+        val isMafia = player.role?.isMafia() == true
+        val senderName = trigger.senderName
+        val phrases = if (isMafia) listOf(
+            "I don't think it's $senderName tbh",
+            "We shouldn't trust $senderName blindly",
+            "That's interesting... suspicious timing though",
+            "Let's focus on the quieter ones",
+            "I'm not so sure about that"
+        ) else listOf(
+            "Yeah I was thinking the same thing",
+            "Hmm, $senderName makes a fair point",
+            "I don't know, something feels off",
+            "Who else has been quiet this round?",
+            "That logic actually makes sense"
+        )
+        return phrases.random()
     }
 
     private fun generateFallbackChat(state: GameState, player: Player): List<String> {

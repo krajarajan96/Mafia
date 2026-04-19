@@ -86,31 +86,62 @@ class GroqGameAI(private val groq: GroqClient) : GameAI {
     override suspend fun generateDiscussion(state: GameState, actor: Player): List<String>? {
         val isMafia = actor.role?.isMafia() == true
         val alive = state.alivePlayers.joinToString(", ") { it.name }
-        val dead = state.deadPlayers.takeIf { it.isNotEmpty() }
-            ?.joinToString(", ") { it.name } ?: "none"
-        val recentChat = state.chatMessages.takeLast(8).joinToString("\n") { "${it.senderName}: ${it.text}" }
+        val dead = state.deadPlayers.takeIf { it.isNotEmpty() }?.joinToString(", ") { it.name } ?: "none"
+        val recentChat = state.chatMessages.takeLast(10).joinToString("\n") { "${it.senderName}: ${it.text}" }
 
         val roleInstr = if (isMafia)
-            "You are secretly Mafia. Blend in with Town. Deflect suspicion onto others, appear helpful, and avoid revealing your true role."
-        else
-            "You are Town (${actor.role?.displayName ?: "Townsfolk"}). Share your observations, build trust with other Town players, and try to identify Mafia members."
-
-        val systemPrompt = buildString {
-            append("You are ${actor.name} ${actor.avatarEmoji}, playing Mafia. Round: ${state.round}.")
-            append(" $roleInstr")
-            append(" Alive players: $alive. Eliminated: $dead.")
-            if (recentChat.isNotEmpty()) append("\nRecent chat:\n$recentChat")
-            append("\n\nWrite 1-2 short, natural in-character chat messages (one per line). Each message must be under 100 characters. No quotation marks. No name prefix. Sound like a real person playing a social deduction game.")
+            "You are secretly Mafia. Blend in, deflect suspicion onto others, appear calm and helpful. Never reveal you are Mafia. You may subtly accuse a Town player."
+        else when (actor.role) {
+            Role.DETECTIVE -> "You are the Detective (Town). You have investigated someone — hint at suspicions without revealing you are the Detective."
+            Role.DOCTOR -> "You are the Doctor (Town). Stay low-key — revealing your role makes you a Mafia target. Express general suspicions."
+            else -> "You are Town. Discuss who seems suspicious based on their behaviour, vote patterns, and what they say. Be direct and conversational."
         }
 
-        val response = groq.chat(systemPrompt, "What do you say?", maxTokens = 100, temperature = 0.85)
+        val systemPrompt = buildString {
+            append("You are ${actor.name} ${actor.avatarEmoji} in a game of Mafia. Round ${state.round}. $roleInstr")
+            append(" Players still alive: $alive.")
+            if (dead != "none") append(" Eliminated: $dead.")
+            if (recentChat.isNotEmpty()) append("\n\nRecent chat (respond naturally to this conversation):\n$recentChat")
+            append("\n\nRules: Write 1-2 short conversational messages as yourself. Under 90 chars each. No quotation marks. No 'Name:' prefix. Sound like a real human texting in a game — casual, direct, maybe emotional. React to what others just said if relevant.")
+        }
+
+        val response = groq.chat(systemPrompt, "What do you say in the group chat?", maxTokens = 120, temperature = 0.9)
             ?: return null
 
         val lines = response.lines()
-            .map { it.trim() }
-            .filter { it.isNotBlank() && it.length < 150 }
+            .map { it.trim().removePrefix("- ").removePrefix("• ") }
+            .filter { it.isNotBlank() && it.length < 150 && !it.startsWith("```") }
             .take(2)
         return lines.ifEmpty { null }
+    }
+
+    override suspend fun generateResponse(state: GameState, actor: Player, triggerMessage: ChatMessage): String? {
+        // Don't reply to own messages
+        if (triggerMessage.senderId == actor.id) return null
+        val isMafia = actor.role?.isMafia() == true
+
+        val roleInstr = if (isMafia)
+            "You are secretly Mafia. React to what was just said — defend yourself if accused, deflect suspicion, or pretend to agree."
+        else
+            "You are Town (${actor.role?.displayName ?: "Townsfolk"}). React honestly to what was said — agree, disagree, or add your own take."
+
+        val recentChat = state.chatMessages.takeLast(6).joinToString("\n") { "${it.senderName}: ${it.text}" }
+        val alive = state.alivePlayers.joinToString(", ") { it.name }
+
+        val systemPrompt = buildString {
+            append("You are ${actor.name} ${actor.avatarEmoji} in a Mafia game. Round ${state.round}. $roleInstr")
+            append(" Players alive: $alive.")
+            if (recentChat.isNotEmpty()) append("\n\nRecent chat:\n$recentChat")
+            append("\n\n${triggerMessage.senderName} just said: \"${triggerMessage.text}\"")
+            append("\n\nWrite ONE short reply (under 90 chars). Casual, direct — like a real person reacting in a group chat. No quotation marks, no name prefix. May skip replying by responding with exactly: SILENT")
+        }
+
+        val response = groq.chat(systemPrompt, "Your reply:", maxTokens = 60, temperature = 0.9)
+            ?: return null
+
+        val cleaned = response.trim().removePrefix("- ").removePrefix("• ")
+        if (cleaned.equals("SILENT", ignoreCase = true) || cleaned.isBlank() || cleaned.length > 150) return null
+        return cleaned
     }
 
     /**
