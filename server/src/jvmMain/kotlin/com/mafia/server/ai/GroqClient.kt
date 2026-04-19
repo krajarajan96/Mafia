@@ -5,6 +5,7 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import kotlinx.serialization.json.*
+import org.slf4j.LoggerFactory
 
 /**
  * Thin HTTP wrapper for the Groq OpenAI-compatible chat completions API.
@@ -15,15 +16,9 @@ class GroqClient(
     private val httpClient: HttpClient,
     val model: String = "llama-3.1-70b-versatile"
 ) {
+    private val log = LoggerFactory.getLogger(GroqClient::class.java)
     private val json = Json { ignoreUnknownKeys = true }
 
-    /**
-     * Sends a chat request to Groq and returns the response text, or null on failure.
-     * @param systemPrompt Sets the AI's role/context.
-     * @param userPrompt The actual question or instruction.
-     * @param maxTokens Limits response length (default 80 — short game decisions).
-     * @param temperature Controls randomness: 0.0 = deterministic, 1.0 = creative.
-     */
     suspend fun chat(
         systemPrompt: String,
         userPrompt: String,
@@ -44,13 +39,37 @@ class GroqClient(
                     }
                 }))
             }
-            val body = json.parseToJsonElement(response.bodyAsText()).jsonObject
-            body["choices"]?.jsonArray
+
+            val rawBody = response.bodyAsText()
+
+            if (!response.status.isSuccess()) {
+                log.warn("Groq HTTP ${response.status.value}: $rawBody")
+                return null
+            }
+
+            val body = json.parseToJsonElement(rawBody).jsonObject
+
+            // Surface API-level errors (e.g. model not found, rate limit)
+            body["error"]?.jsonObject?.let { err ->
+                log.warn("Groq API error: ${err["message"]?.jsonPrimitive?.content}")
+                return null
+            }
+
+            val content = body["choices"]?.jsonArray
                 ?.firstOrNull()?.jsonObject
                 ?.get("message")?.jsonObject
                 ?.get("content")?.jsonPrimitive?.content
                 ?.trim()
-        } catch (_: Exception) {
+
+            if (content.isNullOrBlank()) {
+                log.warn("Groq returned blank content. Full body: $rawBody")
+                return null
+            }
+
+            log.debug("Groq ok [${model}] → ${content.take(80)}")
+            content
+        } catch (e: Exception) {
+            log.error("Groq request failed: ${e::class.simpleName}: ${e.message}")
             null
         }
     }

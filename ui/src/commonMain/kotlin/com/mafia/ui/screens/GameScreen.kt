@@ -280,7 +280,7 @@ private fun ChatTab(
     var chatText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
     LaunchedEffect(chatMessages.size) { if (chatMessages.isNotEmpty()) listState.animateScrollToItem(chatMessages.size - 1) }
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().imePadding()) {
         LazyColumn(state = listState, modifier = Modifier.weight(1f).padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(vertical = 8.dp)) {
             if (chatMessages.isEmpty()) {
                 item {
@@ -326,7 +326,7 @@ private fun MafiaTab(
     val listState = rememberLazyListState()
     LaunchedEffect(mafiaChatMessages.size) { if (mafiaChatMessages.isNotEmpty()) listState.animateScrollToItem(mafiaChatMessages.size - 1) }
 
-    Column(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0xFF1A0510), Color(0xFF0D0818))))) {
+    Column(Modifier.fillMaxSize().imePadding().background(Brush.verticalGradient(listOf(Color(0xFF1A0510), Color(0xFF0D0818))))) {
         // Teammates header
         if (mafiaTeammates.isNotEmpty()) {
             Surface(color = MafiaRed.copy(0.15f), modifier = Modifier.fillMaxWidth()) {

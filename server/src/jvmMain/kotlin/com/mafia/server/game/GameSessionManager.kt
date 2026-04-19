@@ -4,20 +4,26 @@ import com.mafia.server.ai.GroqClient
 import com.mafia.server.ai.GroqGameAI
 import com.mafia.shared.model.*
 import io.ktor.client.*
+import org.slf4j.LoggerFactory
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 class GameSessionManager {
+    private val log = LoggerFactory.getLogger(GameSessionManager::class.java)
     private val sessions = ConcurrentHashMap<String, GameSession>()
     private val codeToRoom = ConcurrentHashMap<String, String>()
     private val playerToRoom = ConcurrentHashMap<String, String>()
 
-    // Shared HTTP client and Groq AI — instantiated once, reused across all sessions.
     private val httpClient = HttpClient()
     private val groqAI: GroqGameAI? = run {
         val key = System.getenv("GROQ_API_KEY")
-        if (!key.isNullOrBlank()) GroqGameAI(GroqClient(key, httpClient))
-        else null
+        if (!key.isNullOrBlank()) {
+            log.info("Groq AI enabled (model: llama-3.1-70b-versatile)")
+            GroqGameAI(GroqClient(key, httpClient))
+        } else {
+            log.warn("GROQ_API_KEY not set — bots will use heuristic AI")
+            null
+        }
     }
 
     fun createRoom(mode: GameMode, settings: GameSettings = GameSettings()): GameSession {

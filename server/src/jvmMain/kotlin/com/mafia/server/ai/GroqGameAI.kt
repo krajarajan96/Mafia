@@ -104,12 +104,13 @@ class GroqGameAI(private val groq: GroqClient) : GameAI {
         }
 
         val response = groq.chat(systemPrompt, "What do you say?", maxTokens = 100, temperature = 0.85)
-            ?: return emptyList()
+            ?: return null
 
-        return response.lines()
+        val lines = response.lines()
             .map { it.trim() }
             .filter { it.isNotBlank() && it.length < 150 }
             .take(2)
+        return lines.ifEmpty { null }
     }
 
     /**
