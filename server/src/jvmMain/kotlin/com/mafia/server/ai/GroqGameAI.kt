@@ -83,7 +83,7 @@ class GroqGameAI(private val groq: GroqClient) : GameAI {
         return matchPlayerName(response, validTargets)?.id ?: validTargets.random().id
     }
 
-    override suspend fun generateDiscussion(state: GameState, actor: Player): List<String> {
+    override suspend fun generateDiscussion(state: GameState, actor: Player): List<String>? {
         val isMafia = actor.role?.isMafia() == true
         val alive = state.alivePlayers.joinToString(", ") { it.name }
         val dead = state.deadPlayers.takeIf { it.isNotEmpty() }
