@@ -881,6 +881,7 @@ private fun VotingContent(
     var voted by remember { mutableStateOf(false) }
     var showHint by remember { mutableStateOf(enableTips && round == 1) }
     val targets = alivePlayers.filter { it.id != myPlayerId }
+    val myPlayer = alivePlayers.find { it.id == myPlayerId }
     val canVeto = myRole == Role.MINISTER && !ministerVetoUsed && !voted
 
     LazyColumn(Modifier.fillMaxSize()) {
@@ -924,6 +925,30 @@ private fun VotingContent(
                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(p.avatarEmoji, fontSize = 28.sp); Spacer(Modifier.width(12.dp)); Text(p.name, color = Color.White, fontSize = 16.sp, modifier = Modifier.weight(1f))
                     if (votes > 0) Surface(color = MafiaRed.copy(0.6f), shape = CircleShape) { Text("$votes", Modifier.padding(horizontal = 10.dp, vertical = 4.dp), color = Color.White, fontWeight = FontWeight.Bold) }
+                }
+            }
+        }
+        // Show current player's own card (non-clickable) so they can see votes against them
+        if (myPlayer != null) {
+            item {
+                val myVotes = voteTally[myPlayerId] ?: 0
+                Surface(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    color = Color.White.copy(0.04f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(myPlayer.avatarEmoji, fontSize = 28.sp)
+                        Spacer(Modifier.width(12.dp))
+                        Text(myPlayer.name, color = Color.White.copy(0.5f), fontSize = 16.sp, modifier = Modifier.weight(1f))
+                        Text("You", fontSize = 11.sp, color = Color.White.copy(0.3f))
+                        if (myVotes > 0) {
+                            Spacer(Modifier.width(8.dp))
+                            Surface(color = MafiaRed.copy(0.6f), shape = CircleShape) {
+                                Text("$myVotes", Modifier.padding(horizontal = 10.dp, vertical = 4.dp), color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
                 }
             }
         }

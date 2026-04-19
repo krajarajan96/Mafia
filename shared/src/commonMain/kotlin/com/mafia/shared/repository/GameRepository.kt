@@ -179,6 +179,7 @@ class GameRepository(
                 _rematchReadyIds.value = emptyList()
                 resetForNewGame()
             }
+            is ServerMessage.EliminatedRolesReveal -> _revealedRoles.value = _revealedRoles.value + msg.allRoles
             is ServerMessage.Error -> _errorMessage.value = msg.message
             else -> {}
         }
