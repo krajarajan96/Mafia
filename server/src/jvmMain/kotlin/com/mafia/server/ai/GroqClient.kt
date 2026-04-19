@@ -14,7 +14,7 @@ import org.slf4j.LoggerFactory
 class GroqClient(
     private val apiKey: String,
     private val httpClient: HttpClient,
-    val model: String = "llama-3.1-70b-versatile"
+    val model: String = "llama-3.3-70b-versatile"
 ) {
     private val log = LoggerFactory.getLogger(GroqClient::class.java)
     private val json = Json { ignoreUnknownKeys = true }

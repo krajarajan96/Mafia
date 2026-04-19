@@ -18,7 +18,7 @@ class GameSessionManager {
     private val groqAI: GroqGameAI? = run {
         val key = System.getenv("GROQ_API_KEY")
         if (!key.isNullOrBlank()) {
-            log.info("Groq AI enabled (model: llama-3.1-70b-versatile)")
+            log.info("Groq AI enabled (model: llama-3.3-70b-versatile)")
             GroqGameAI(GroqClient(key, httpClient))
         } else {
             log.warn("GROQ_API_KEY not set — bots will use heuristic AI")

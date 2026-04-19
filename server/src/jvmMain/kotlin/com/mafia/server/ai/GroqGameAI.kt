@@ -129,19 +129,36 @@ class GroqGameAI(private val groq: GroqClient) : GameAI {
         val alive = state.alivePlayers.joinToString(", ") { it.name }
 
         val systemPrompt = buildString {
-            append("You are ${actor.name} ${actor.avatarEmoji} in a Mafia game. Round ${state.round}. $roleInstr")
+            append("You are ${actor.name} ${actor.avatarEmoji} in a game of Mafia. Round ${state.round}. $roleInstr")
             append(" Players alive: $alive.")
             if (recentChat.isNotEmpty()) append("\n\nRecent chat:\n$recentChat")
             append("\n\n${triggerMessage.senderName} just said: \"${triggerMessage.text}\"")
-            append("\n\nWrite ONE short reply (under 90 chars). Casual, direct — like a real person reacting in a group chat. No quotation marks, no name prefix. May skip replying by responding with exactly: SILENT")
+            append("\n\nReply with ONE short message (under 90 chars). Be casual and direct, like someone texting in a game. No quotation marks, no name prefix. You MUST reply — do not refuse.")
         }
 
         val response = groq.chat(systemPrompt, "Your reply:", maxTokens = 60, temperature = 0.9)
             ?: return null
 
         val cleaned = response.trim().removePrefix("- ").removePrefix("• ")
-        if (cleaned.equals("SILENT", ignoreCase = true) || cleaned.isBlank() || cleaned.length > 150) return null
+        if (cleaned.isBlank() || cleaned.length > 200) return null
         return cleaned
+    }
+
+    override suspend fun generateNightReaction(state: GameState, actor: Player, eliminatedName: String): String? {
+        val isMafia = actor.role?.isMafia() == true
+        val alive = state.alivePlayers.joinToString(", ") { it.name }
+        val roleInstr = if (isMafia)
+            "You are secretly Mafia. Pretend to be shocked or sad. Don't reveal you're responsible."
+        else
+            "You are Town. React genuinely — shocked, suspicious, or determined to find the killer."
+
+        val systemPrompt = "You are ${actor.name} ${actor.avatarEmoji} in a Mafia game. Round ${state.round}. $roleInstr Players still alive: $alive.\n\n$eliminatedName was just killed by the Mafia overnight. Write ONE short reaction (under 80 chars). Casual and emotional, like a real person. No quotation marks, no name prefix."
+
+        val response = groq.chat(systemPrompt, "Your reaction:", maxTokens = 50, temperature = 0.95)
+            ?: return null
+
+        val cleaned = response.trim().removePrefix("- ").removePrefix("• ")
+        return if (cleaned.isBlank() || cleaned.length > 200) null else cleaned
     }
 
     /**
