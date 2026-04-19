@@ -28,14 +28,21 @@ class GameSocket(
         _connectionState.value = ConnectionState.CONNECTING
         session = client.webSocketSession("$baseUrl/game")
         _connectionState.value = ConnectionState.CONNECTED
-        scope.launch { for (msg in outgoing) { session?.send(Frame.Text(ClientMessage.encode(msg))) } }
-        session?.let { ws ->
-            for (frame in ws.incoming) {
-                if (frame is Frame.Text) {
-                    try { _incoming.emit(ServerMessage.decode(frame.readText())) } catch (_: Exception) {}
+        scope.launch {
+            try { for (msg in outgoing) { session?.send(Frame.Text(ClientMessage.encode(msg))) } }
+            catch (_: Exception) {}
+        }
+        try {
+            session?.let { ws ->
+                for (frame in ws.incoming) {
+                    if (frame is Frame.Text) {
+                        try { _incoming.emit(ServerMessage.decode(frame.readText())) } catch (_: Exception) {}
+                    }
                 }
             }
-        }
+        } catch (_: Exception) {}
+        // Connection closed — throw so connect() loop knows to reconnect
+        throw Exception("WebSocket closed")
     }
 
     fun connect() {

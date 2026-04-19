@@ -14,6 +14,6 @@ interface GameAI {
     /** Returns the ID of the player to vote for during the voting phase, or null to skip. */
     suspend fun chooseVoteTarget(state: GameState, actor: Player): String?
 
-    /** Returns a list of chat messages to send during the discussion phase. */
-    suspend fun generateDiscussion(state: GameState, actor: Player): List<String>
+    /** Returns a list of chat messages to send during the discussion phase, or null to use fallback. */
+    suspend fun generateDiscussion(state: GameState, actor: Player): List<String>?
 }

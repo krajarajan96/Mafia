@@ -2,6 +2,7 @@ package com.mafia.server.game
 
 import com.mafia.server.ai.GameAI
 import com.mafia.shared.model.*
+import org.slf4j.LoggerFactory
 
 /**
  * Coordinates AI player actions within a game session.
@@ -10,11 +11,16 @@ import com.mafia.shared.model.*
  */
 class AIPlayerController(private val ai: GameAI? = null) {
 
+    private val log = LoggerFactory.getLogger(AIPlayerController::class.java)
+
     suspend fun chooseNightTarget(state: GameState, player: Player): String? =
         ai?.chooseNightTarget(state, player) ?: heuristicNightTarget(state, player)
 
-    suspend fun generateDiscussion(state: GameState, player: Player): List<String> =
-        ai?.generateDiscussion(state, player) ?: generateFallbackChat(state, player)
+    suspend fun generateDiscussion(state: GameState, player: Player): List<String> {
+        val result = ai?.generateDiscussion(state, player)
+        if (result == null && ai != null) log.info("Groq discussion fallback for ${player.name} (${player.role})")
+        return result ?: generateFallbackChat(state, player)
+    }
 
     suspend fun chooseVoteTarget(state: GameState, player: Player): String? =
         ai?.chooseVoteTarget(state, player) ?: heuristicVoteTarget(state, player)
