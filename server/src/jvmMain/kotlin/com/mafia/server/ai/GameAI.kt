@@ -1,5 +1,6 @@
 package com.mafia.server.ai
 
+import com.mafia.shared.model.ChatMessage
 import com.mafia.shared.model.GameState
 import com.mafia.shared.model.Player
 
