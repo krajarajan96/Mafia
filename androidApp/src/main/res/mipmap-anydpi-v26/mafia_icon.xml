@@ -2,6 +2,6 @@
 <adaptive-icon xmlns:tools="http://schemas.android.com/tools"
     xmlns:android="http://schemas.android.com/apk/res/android"
     tools:ignore="MonochromeLauncherIcon">
-  <background android:drawable="@drawable/mafia_game_icon" />
-  <foreground android:drawable="@drawable/mafia_game_icon" />
+    <background android:drawable="@drawable/mafia_icon" />
+    <foreground android:drawable="@drawable/mafia_icon" />
 </adaptive-icon>

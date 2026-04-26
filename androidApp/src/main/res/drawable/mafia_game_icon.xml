@@ -19,7 +19,7 @@
         android:strokeWidth="1"
         android:fillColor="#7C3AED"
         android:strokeColor="#00000000"
-        android:strokeLineCap="butt"/>
+        android:strokeLineCap="butt"/>.
     <path
         android:pathData="M340,175C375,175 405,183 428,200C452,217 468,243 470,273C472,303 462,333 440,357C422,377 398,391 370,397L340,400Z"
         android:strokeLineJoin="miter"

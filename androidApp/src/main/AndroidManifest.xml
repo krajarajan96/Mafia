@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <application android:allowBackup="true" android:label="Mafia" android:supportsRtl="true" android:theme="@style/Theme.Mafia" android:icon="@mipmap/mafia_game_icon" android:roundIcon="@mipmap/mafia_game_icon">
+    <application android:allowBackup="true" android:label="Mafia" android:supportsRtl="true" android:theme="@style/Theme.Mafia" android:icon="@mipmap/mafia_icon" android:roundIcon="@mipmap/mafia_icon">
         <activity android:name="com.mafia.android.MainActivity" android:exported="true" android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
